@@ -4,6 +4,7 @@
     <a href="https://plvn.app/uk/rationality">Читати онлайн</a> | <a href="./assets/">Завантажити у PDF</a>
 </p>
 
+\
 Український переклад книги Елієзера Юдковскі [Rationality: from AI to Zombies](https://www.readthesequences.com)
 
 Переклав: [Данило Жирко](https://t.me/misterlinguist) \
