@@ -9,7 +9,12 @@
       "stripProtocol": false,
       "styleAsLink": true
     },
-    "page_size": "6in 8in",
+    "page_size": {
+      "preset": "custom",
+      "width": 145,
+      "height": 205,
+      "unit": "mm"
+    },
     "page_orientation": "portrait",
     "skip_cover": false,
     "cover_use_page_margins": false,

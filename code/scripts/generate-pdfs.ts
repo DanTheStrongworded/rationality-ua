@@ -483,12 +483,9 @@ async function paginate(page: Page) {
   return pageCount;
 }
 
-function pageSizeForVariant(variant: Variant, book: BookSpec): { width: string; height: string } {
-  if (variant === "print") {
-    // 145x205mm from print.storinkator.json
-    return { width: "145mm", height: "205mm" };
-  }
-  return { width: "6in", height: "8in" };
+function pageSizeForVariant(_variant: Variant, _book: BookSpec): { width: string; height: string } {
+  // Match digital + print storinkator configs (145×205 mm)
+  return { width: "145mm", height: "205mm" };
 }
 
 async function exportPdf(page: Page, outPath: string, variant: Variant, book: BookSpec) {
