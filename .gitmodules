@@ -1,4 +1,4 @@
 [submodule "books/private"]
 	path = books/private
 	url = https://github.com/DanTheStrongworded/rationality-ua-private.git
-	branch = experiments
+	branch = main
