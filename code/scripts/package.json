@@ -1,0 +1,14 @@
+{
+  "name": "rationality-ua-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "pdf-lib": "^1.17.1",
+    "playwright-core": "^1.63.0"
+  },
+  "scripts": {
+    "generate-simplified-covers": "bun run generate-simplified-covers.ts",
+    "generate-pdfs": "bun run generate-pdfs.ts"
+  }
+}
