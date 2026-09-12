@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Convert PDF to CMYK (lossless images) and force black/gray to pure K.
+ * Convert PDF to CMYK (lossless images).
  * Requires Ghostscript (`gs`) on PATH and `npm install` in this folder (pdf-lib).
  *
  * Usage (from code/scripts):
@@ -8,6 +8,8 @@
  *
  * Default ICC: PSO Uncoated v3 (FOGRA52) from the storinkator repo when found.
  * If output is omitted, writes `<input>-CMYK.pdf` next to the input.
+ *
+ * The old pdf-lib “pure K” rewrite is permanently disabled (it corrupted images).
  */
 
 import { spawnSync } from "node:child_process";
@@ -460,6 +462,11 @@ async function main() {
     iccProfile = args[iccIdx + 1];
     args.splice(iccIdx, 2);
   }
+  // Legacy flags ignored: pure-K rewrite is permanently disabled (image glitches).
+  for (const legacy of ["--no-pure-k", "--pure-k"]) {
+    const i = args.indexOf(legacy);
+    if (i >= 0) args.splice(i, 1);
+  }
 
   const inputArg = args[0];
   if (!inputArg) {
@@ -481,7 +488,6 @@ async function main() {
   try {
     gsToCmyk(src, tmp, { iccProfile });
     copyFileSync(tmp, out);
-    await forcePureK(out);
   } finally {
     rmSync(tmp, { force: true });
   }
