@@ -1,22 +1,44 @@
 {
   "storinkatorPageCss": "3",
   "schemaVersion": 3,
-  "exportedAt": "2026-08-04T23:04:01.566Z",
+  "exportedAt": "2026-08-24T15:12:19.686Z",
   "values": {
-    "page_size": "6in 8in",
+    "resolve_links": {
+      "enabled": true,
+      "mode": "footnote",
+      "stripProtocol": false,
+      "styleAsLink": true
+    },
+    "page_size": {
+      "preset": "custom",
+      "width": 145,
+      "height": 205,
+      "unit": "mm"
+    },
     "page_orientation": "portrait",
+    "skip_cover": false,
+    "cover_use_page_margins": false,
     "empty_page_after_cover": true,
-    "after_cover_blank_side": "recto",
+    "after_cover_blank_side": "verso",
     "page_margin_top": 17,
     "page_margin_bottom": 20,
     "page_margin_gutter": 15,
     "page_margin_outer": 23.5,
+    "page_bleed": 0,
+    "h1_page_colors": true,
+    "h1_page_background": "#166600",
+    "h1_page_text_color": "#ffffff",
     "running_header": {
       "enabled": true,
       "levels": "h1"
     },
     "text_running_header": {
-      "active": ["fontSize", "fontWeight", "letterSpacing", "textTransform"],
+      "active": [
+        "fontSize",
+        "fontWeight",
+        "letterSpacing",
+        "textTransform"
+      ],
       "fontSize": 0.7,
       "fontWeight": 600,
       "letterSpacing": 0.04,
@@ -24,15 +46,19 @@
       "fontSizeUnit": "em"
     },
     "text_folio": {
-      "active": ["fontSize"],
+      "active": [
+        "fontSize"
+      ],
       "fontSize": 0.866667,
       "fontSizeUnit": "em"
     },
-    "folio_skip_first_pages": 2,
-    "folio_start_number": 1,
+    "folio_count_from_page": 1,
+    "folio_show_from_page": 4,
     "accent_color": "#166600",
     "text_links": {
-      "active": ["color"],
+      "active": [
+        "color"
+      ],
       "colorMode": "accent"
     },
     "text_body": {
@@ -52,13 +78,20 @@
       "fontFamilyMode": "preset"
     },
     "text_paragraph": {
-      "active": ["textAlign", "textAlignLast", "textIndent"],
+      "active": [
+        "textAlign",
+        "textAlignLast",
+        "textIndent"
+      ],
       "textAlign": "justify",
       "textAlignLast": "left",
       "textIndent": 1.5
     },
     "text_sub_sup": {
-      "active": ["fontSize", "fontWeight"],
+      "active": [
+        "fontSize",
+        "fontWeight"
+      ],
       "fontSize": 0.6,
       "fontWeight": 700,
       "fontSizeUnit": "em"
@@ -76,14 +109,30 @@
     "paragraph_orphans": 2,
     "paragraph_widows": 2,
     "paragraph_hyphens": true,
+    "nbsp_before_emdash": true,
+    "paragraph_hyphenation_language": "uk",
     "text_lists": {
-      "active": ["paddingLeft"],
+      "active": [
+        "paddingLeft"
+      ],
       "paddingLeft": 1.5
     },
     "text_blockquote": {
-      "active": ["marginBottom"],
-      "marginBottom": 0
+      "active": [
+        "marginTop",
+        "marginRight",
+        "marginBottom",
+        "marginLeft",
+        "textIndent"
+      ],
+      "marginTop": 0.75,
+      "marginRight": 1.5,
+      "marginBottom": 0.75,
+      "marginLeft": 1.5,
+      "textIndent": 1.5
     },
+    "blockquote_paragraph_mode": "spacing",
+    "blockquote_paragraph_spacing": 0.75,
     "text_headings": {
       "active": [
         "fontFamily",
@@ -91,7 +140,8 @@
         "lineHeight",
         "letterSpacing",
         "textWrap",
-        "marginTop"
+        "marginTop",
+        "textStroke"
       ],
       "fontFamily": "Geologica",
       "fontWeight": 750,
@@ -99,10 +149,13 @@
       "letterSpacing": -0.02,
       "textWrap": "balance",
       "marginTop": 0,
+      "textStroke": 0,
       "fontFamilyMode": "preset"
     },
     "text_chapter_heading": {
-      "active": ["fontSize"],
+      "active": [
+        "fontSize"
+      ],
       "fontSize": 2.5,
       "fontSizeUnit": "em"
     },
@@ -125,7 +178,9 @@
       "fontFamilyMode": "preset"
     },
     "text_toc": {
-      "active": ["textWrap"],
+      "active": [
+        "textWrap"
+      ],
       "textWrap": "balance"
     },
     "toc_level_3_visible": false,
@@ -133,7 +188,10 @@
     "toc_level_5_visible": false,
     "toc_level_6_visible": false,
     "text_footnotes": {
-      "active": ["fontSize", "lineHeight"],
+      "active": [
+        "fontSize",
+        "lineHeight"
+      ],
       "fontSize": 0.78,
       "lineHeight": 1.25,
       "fontSizeUnit": "em"
@@ -144,7 +202,8 @@
     "content_variables": {
       "TRANSLATION_VERSION": "2.0",
       "TRANSLATION_DATE": "3 травня 2026"
-    }
+    },
+    "cover_image": "cover-print.png"
   },
   "bookScopeHint": "2. Як по-справжньому змінювати думку"
 }

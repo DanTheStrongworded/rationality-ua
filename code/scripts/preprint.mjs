@@ -4,8 +4,9 @@
  * Requires Ghostscript (`gs`) on PATH and `npm install` in this folder (pdf-lib).
  *
  * Usage (from code/scripts):
- *   node preprint.mjs <input.pdf> [output.pdf]
+ *   node preprint.mjs <input.pdf> [output.pdf] [--icc /path/to/profile.icc]
  *
+ * Default ICC: PSO Uncoated v3 (FOGRA52) from the storinkator repo when found.
  * If output is omitted, writes `<input>-CMYK.pdf` next to the input.
  */
 
@@ -21,7 +22,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import {
   PDFArray,
@@ -138,8 +140,73 @@ function rewriteContent(bytes) {
   return Buffer.from(text, "latin1");
 }
 
-function gsToCmyk(src, dst) {
-  const icc = findIccDir();
+function resolveOutputIcc(explicitPath) {
+  if (explicitPath) {
+    if (!existsSync(explicitPath)) {
+      throw new Error(`ICC profile not found: ${explicitPath}`);
+    }
+    return explicitPath;
+  }
+  const preferred = [
+    // Storinkator default (PSO Uncoated v3)
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../storinkator/iccprofiles/PSOuncoated_v3_FOGRA52.icc",
+    ),
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../../storinkator/iccprofiles/PSOuncoated_v3_FOGRA52.icc",
+    ),
+    "/Users/denis/Desktop/Projects/storinkator/iccprofiles/PSOuncoated_v3_FOGRA52.icc",
+  ];
+  for (const p of preferred) {
+    if (existsSync(p)) return p;
+  }
+  const iccDir = findIccDir();
+  return join(iccDir, "default_cmyk.icc");
+}
+
+function ghostscriptPermitArgs(readPaths = [], writePaths = []) {
+  const args = [];
+  const readSeen = new Set();
+  for (const dir of [
+    dirname(resolveOutputIcc()),
+    ...[
+      "/opt/homebrew/share/ghostscript/iccprofiles",
+      "/usr/local/share/ghostscript/iccprofiles",
+    ].filter(existsSync),
+  ]) {
+    if (!dir || readSeen.has(dir)) continue;
+    readSeen.add(dir);
+    args.push(`--permit-file-read=${dir}`);
+  }
+  try {
+    const iccDir = findIccDir();
+    if (!readSeen.has(iccDir)) {
+      readSeen.add(iccDir);
+      args.push(`--permit-file-read=${iccDir}`);
+    }
+  } catch {
+    /* optional */
+  }
+  for (const path of readPaths) {
+    if (!path || readSeen.has(path)) continue;
+    readSeen.add(path);
+    args.push(`--permit-file-read=${path}`);
+  }
+  const writeSeen = new Set();
+  for (const path of writePaths) {
+    if (!path || writeSeen.has(path)) continue;
+    writeSeen.add(path);
+    args.push(`--permit-file-write=${path}`);
+  }
+  return args;
+}
+
+function gsToCmyk(src, dst, { iccProfile } = {}) {
+  const outputIcc = resolveOutputIcc(iccProfile);
+  const iccDir = findIccDir();
+  const defaultCmyk = join(iccDir, "default_cmyk.icc");
   const tmpDir = mkdtempSync(join(tmpdir(), "cmyk-"));
   let workIn = src;
   let workOut = dst;
@@ -155,6 +222,10 @@ function gsToCmyk(src, dst) {
 
     const cmd = [
       "gs",
+      ...ghostscriptPermitArgs(
+        [outputIcc, defaultCmyk, workIn, src, dirname(outputIcc)],
+        [workOut, dst, tmpDir],
+      ),
       "-dBATCH",
       "-dNOPAUSE",
       "-dNOOUTERSAVE",
@@ -164,10 +235,9 @@ function gsToCmyk(src, dst) {
       "-sColorConversionStrategy=CMYK",
       "-dProcessColorModel=/DeviceCMYK",
       "-dDeviceGrayToK=true",
-      `-sDefaultCMYKProfile=${join(icc, "default_cmyk.icc")}`,
-      `-sOutputICCProfile=${join(icc, "default_cmyk.icc")}`,
+      `-sDefaultCMYKProfile=${outputIcc}`,
+      `-sOutputICCProfile=${outputIcc}`,
       "-dOverrideICC=true",
-      // gray_to_k.icc as DefaultGrayProfile crashes GS 10.07 on some files
       "-dAutoFilterColorImages=false",
       "-dAutoFilterGrayImages=false",
       "-dColorImageFilter=/FlateEncode",
@@ -179,7 +249,8 @@ function gsToCmyk(src, dst) {
       "-dDownsampleColorImages=false",
       "-dDownsampleGrayImages=false",
       "-dDownsampleMonoImages=false",
-      "-dPassThroughJPEGImages=true",
+      // Must be false: passthrough leaves RGB JPEG labeled as CMYK.
+      "-dPassThroughJPEGImages=false",
       "-dDetectDuplicateImages=true",
       "-dCompressFonts=true",
       "-dSubsetFonts=true",
@@ -189,10 +260,17 @@ function gsToCmyk(src, dst) {
       workIn,
     ];
 
-    console.log("Running Ghostscript CMYK conversion (lossless images)...");
+    console.log(`Running Ghostscript CMYK conversion (ICC: ${outputIcc})...`);
     const result = spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit" });
+    const outExists = existsSync(workOut) && statSync(workOut).size > 1000;
     if (result.status !== 0) {
-      throw new Error(`Ghostscript failed with exit code ${result.status}`);
+      if (outExists) {
+        console.warn(
+          `Ghostscript exited ${result.status} but wrote output (${statSync(workOut).size} bytes) — continuing.`,
+        );
+      } else {
+        throw new Error(`Ghostscript failed with exit code ${result.status}`);
+      }
     }
     if (workOut !== dst) copyFileSync(workOut, dst);
   } finally {
@@ -375,19 +453,24 @@ async function forcePureK(pdfPath) {
 }
 
 async function main() {
-  const inputArg = process.argv[2];
+  const args = process.argv.slice(2);
+  const iccIdx = args.indexOf("--icc");
+  let iccProfile;
+  if (iccIdx >= 0) {
+    iccProfile = args[iccIdx + 1];
+    args.splice(iccIdx, 2);
+  }
+
+  const inputArg = args[0];
   if (!inputArg) {
     console.error(
-      "Usage: node preprint.mjs <input.pdf> [output.pdf]",
+      "Usage: node preprint.mjs <input.pdf> [output.pdf] [--icc profile.icc]",
     );
     process.exit(1);
   }
 
   const src = resolve(inputArg);
-  const out = resolve(
-    process.argv[3] ??
-      src.replace(/\.pdf$/i, "") + "-CMYK.pdf",
-  );
+  const out = resolve(args[1] ?? src.replace(/\.pdf$/i, "") + "-CMYK.pdf");
   const tmp = join(tmpdir(), `cmyk-work-${process.pid}.pdf`);
 
   if (!existsSync(src)) {
@@ -396,7 +479,7 @@ async function main() {
   }
 
   try {
-    gsToCmyk(src, tmp);
+    gsToCmyk(src, tmp, { iccProfile });
     copyFileSync(tmp, out);
     await forcePureK(out);
   } finally {
