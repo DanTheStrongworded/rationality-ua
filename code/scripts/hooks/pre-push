@@ -19,7 +19,13 @@ SUBBRANCH="$(git config -f "$TOP/.gitmodules" submodule.books/private.branch 2>/
 while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   case "$LOCAL_SHA" in 0000000000000000000000000000000000000000) continue;; esac
   if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
-    RANGE="$LOCAL_SHA"
+    # New remote branch: only check commits not already on origin/main
+    # (full history includes orphaned private-book SHAs from the repo split).
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+      RANGE="origin/main..$LOCAL_SHA"
+    else
+      RANGE="$LOCAL_SHA"
+    fi
   else
     RANGE="$REMOTE_SHA..$LOCAL_SHA"
   fi
