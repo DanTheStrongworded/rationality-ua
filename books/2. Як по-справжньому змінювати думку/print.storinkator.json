@@ -25,7 +25,7 @@
     "page_margin_gutter": 15,
     "page_margin_outer": 23.5,
     "page_bleed": 0,
-    "h1_page_colors": false,
+    "h1_page_colors": true,
     "h1_page_background": "#166600",
     "h1_page_text_color": "#ffffff",
     "running_header": {
