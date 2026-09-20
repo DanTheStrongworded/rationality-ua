@@ -37,12 +37,14 @@
         "fontSize",
         "fontWeight",
         "letterSpacing",
-        "textTransform"
+        "textTransform",
+        "marginTop"
       ],
       "fontSize": 0.7,
       "fontWeight": 600,
       "letterSpacing": 0.04,
       "textTransform": "uppercase",
+      "marginTop": 1,
       "fontSizeUnit": "em"
     },
     "text_folio": {
@@ -140,7 +142,6 @@
         "lineHeight",
         "letterSpacing",
         "textWrap",
-        "marginTop",
         "textStroke"
       ],
       "fontFamily": "Geologica",
@@ -148,16 +149,32 @@
       "lineHeight": 1.1,
       "letterSpacing": -0.02,
       "textWrap": "balance",
-      "marginTop": 0,
       "textStroke": 0,
       "fontFamilyMode": "preset"
     },
-    "text_chapter_heading": {
+    "text_h1": {
       "active": [
-        "fontSize"
+        "fontSize",
+        "marginTop"
       ],
       "fontSize": 2.5,
+      "marginTop": 8.6,
       "fontSizeUnit": "em"
+    },
+    "text_h2": {
+      "active": []
+    },
+    "text_h3": {
+      "active": []
+    },
+    "text_h4": {
+      "active": []
+    },
+    "text_h5": {
+      "active": []
+    },
+    "text_h6": {
+      "active": []
     },
     "heading_dropcap_levels": "h2",
     "heading_dropcap_min_chars": 65,
