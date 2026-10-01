@@ -8,6 +8,6 @@
 
 ## Атрибуція
 
-При використанні цих шпалер, будь ласка, вказуйте авторство: «Шпалери від Дениса Лук'яненка у пару до [українського перекладу](github.com/DanTheStrongworded/rationality-ua-public) книг "Rationality: A to Z", ліцензовано за CC BY 4.0».
+При використанні цих шпалер, будь ласка, вказуйте авторство: «Шпалери від Дениса Лук'яненка у пару до [українського перекладу](github.com/DanTheStrongworded/rationality-ua) книг "Rationality: A to Z", ліцензовано за CC BY 4.0».
 
-Шпалери від Дениса Лук'яненка у пару до українського перекладу книг "Rationality: A to Z" (github.com/DanTheStrongworded/rationality-ua-public), ліцензовано за CC BY 4.0
+Шпалери від Дениса Лук'яненка у пару до українського перекладу книг "Rationality: A to Z" (github.com/DanTheStrongworded/rationality-ua), ліцензовано за CC BY 4.0
