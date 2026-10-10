@@ -195,6 +195,7 @@ function findBrowserExecutable(): string {
     "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
     `${process.env.HOME}/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`,
     `${process.env.HOME}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+    ...windowsBrowserCandidates(),
   ];
   for (const p of candidates) {
     if (p && existsSync(p)) return p;
@@ -202,6 +203,22 @@ function findBrowserExecutable(): string {
   throw new Error(
     "No Chromium browser found. Install Brave/Chrome/Edge or set CHROME_PATH.",
   );
+}
+
+/** Chromium locations on Windows (Program Files + per-user installs). */
+function windowsBrowserCandidates(): string[] {
+  if (process.platform !== "win32") return [];
+  const progFiles = process.env.PROGRAMFILES ?? "C:\\Program Files";
+  const localApp = process.env.LOCALAPPDATA ??
+    (process.env.USERPROFILE ? join(process.env.USERPROFILE, "AppData", "Local") : "");
+  const roots = [progFiles, localApp].filter((r) => r !== "");
+  const rel = [
+    "BraveSoftware/Brave-Browser/Application/brave.exe",
+    "Google/Chrome/Application/chrome.exe",
+    "Chromium/Application/chrome.exe",
+    "Microsoft/Edge/Application/msedge.exe",
+  ];
+  return roots.flatMap((root) => rel.map((r) => join(root, r)));
 }
 
 function findStorinkatorDir(): string | null {

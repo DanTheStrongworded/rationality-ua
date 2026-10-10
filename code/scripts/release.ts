@@ -261,7 +261,7 @@ export async function main(): Promise<void> {
 }
 
 const invokedAsMain =
-  process.argv[1] != null && fileURLToPath(import.meta.url) === process.argv[1];
+  process.argv[1] != null && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
   main().catch((error) => {
     console.error(`Помилка: ${(error as Error).message}`);

@@ -372,7 +372,7 @@ export async function main(): Promise<void> {
 
 // Run the script
 const invokedAsMain =
-  process.argv[1] != null && fileURLToPath(import.meta.url) === process.argv[1];
+  process.argv[1] != null && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
   void main();
 }

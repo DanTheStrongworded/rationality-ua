@@ -15,6 +15,8 @@
 # If print-bw.storinkator.json is missing it is created from the print-bw
 # branch (or derived) keeping the current version/date/margins untouched.
 # On failure it asks to retry / skip the book / abort.
+#
+# On Windows run from Git Bash (ships with git); CMD/PowerShell won't work.
 
 set -u
 

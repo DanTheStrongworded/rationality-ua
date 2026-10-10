@@ -28,7 +28,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverBooks, SERIES } from "./books.ts";
 
@@ -321,7 +321,7 @@ export function run(argv: string[]): number {
 }
 
 const invokedAsMain =
-  process.argv[1] != null && fileURLToPath(import.meta.url) === process.argv[1];
+  process.argv[1] != null && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
   process.exit(run(process.argv.slice(2)));
 }

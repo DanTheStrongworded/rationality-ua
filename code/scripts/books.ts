@@ -116,7 +116,7 @@ export function discoverBooks(root: string = defaultRoot()): BookSpec[] {
 }
 
 const invokedAsMain =
-  process.argv[1] != null && fileURLToPath(import.meta.url) === process.argv[1];
+  process.argv[1] != null && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
   for (const b of discoverBooks()) {
     console.log(`${b.id}|${b.dir}|${b.ordinalUk}|${b.printFormat}|${b.title}`);

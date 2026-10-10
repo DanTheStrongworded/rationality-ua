@@ -32,6 +32,7 @@
 #  bun code/scripts/release-configs.ts links --repo-root . --book <id>)
 #
 # Needs: git (+ bun or node >= 22 and curl for the full flow).
+# On Windows run from Git Bash (ships with git); CMD/PowerShell won't work.
 
 set -u
 
