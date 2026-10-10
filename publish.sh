@@ -30,7 +30,12 @@ fi
 SUBBRANCH="$(git config -f "$TOP/.gitmodules" submodule.books/private.branch)"
 OUTERBRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
-git submodule update -q --init
+# Make sure the private book is checked out, but never touch its working
+# tree: it usually holds the very changes step 1 is about to publish, and a
+# plain `git submodule update` aborts on them (or would reset them away).
+if [ ! -e "$TOP/books/private/.git" ]; then
+  git submodule update -q --init -- books/private
+fi
 
 echo ">>> Step 1 of 2: private book (books/private)"
 cd "$TOP/books/private"
