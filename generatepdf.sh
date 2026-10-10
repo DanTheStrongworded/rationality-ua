@@ -21,23 +21,21 @@ set -u
 PROD_URL="https://storinkator.vercel.app"
 SERIES="Раціональність від А до Я"
 
-book_dir() {
-  case "$1" in
-    1) echo "books/1. Мапа і Територія" ;;
-    2) echo "books/2. Як по-справжньому змінювати думку" ;;
-    3) echo "books/private/3. Машина у духові" ;;
-  esac
+book_line() {
+  # book_line <id-or-dir> -> full `|` record (id|dir|ordinal|format|title) or empty
+  echo "$BOOKS_LIST" | awk -F'|' -v k="$1" '$1==k || $2==k {print; exit}'
 }
 
-book_title() {
-  case "$1" in
-    1) echo "Книга Перша" ;;
-    2) echo "Книга Друга" ;;
-    3) echo "Книга Третя" ;;
+book_dir() { book_line "$1" | cut -d'|' -f2; }
+
+book_title() { book_line "$1" | cut -d'|' -f5; }
+
+is_private() {
+  case "$(book_dir "$1")" in
+    books/private/*) return 0 ;;
+    *) return 1 ;;
   esac
 }
-
-is_private() { [ "$1" = "3" ]; }
 
 info() { echo ">>> $*"; }
 note() { echo "    $*"; }
@@ -50,6 +48,9 @@ RT=""
 if command -v bun >/dev/null 2>&1; then RT="bun";
 elif command -v node >/dev/null 2>&1; then RT="node";
 else die "need bun or node on PATH"; fi
+
+BOOKS_LIST="$("$RT" "$TOP/code/scripts/books.ts")" || die "cannot list books"
+[ -z "$BOOKS_LIST" ] && die "no books found (need *.storinkator.json under books/)"
 
 URL="$PROD_URL"
 BOOK_ARG=""
@@ -68,13 +69,21 @@ done
 IDS="$BOOK_ARG"
 if [ -z "$IDS" ]; then
   echo "Which book(s) to rebuild?"
-  for id in 1 2 3; do
-    echo "  $id. $SERIES. $(book_title "$id")"
+  echo "$BOOKS_LIST" | while IFS='|' read -r bid _ _ _ btitle; do
+    echo "  $bid. $SERIES. $btitle"
   done
   printf "Books (e.g. '1 3', Enter = all): "
   IFS= read -r IDS || true
-  [ -z "$IDS" ] && IDS="1 2 3"
+  if [ -z "$IDS" ]; then IDS="$(echo "$BOOKS_LIST" | cut -d'|' -f1)"; fi
 fi
+# normalize tokens (id or dir) to ids
+RESOLVED_IDS=""
+for token in $IDS; do
+  rid="$(book_line "$token" | cut -d'|' -f1)"
+  [ -z "$rid" ] && die "unknown book: $token"
+  RESOLVED_IDS="$RESOLVED_IDS $rid"
+done
+IDS="$RESOLVED_IDS"
 
 # warn when the builder site may be stale (never changes anything here)
 STOR_DIR="${STORINKATOR_DIR:-$TOP/../storinkator}"
@@ -98,8 +107,8 @@ cfg_value() {
 }
 
 for id in $IDS; do
-  case "$id" in 1|2|3) ;; *) die "unknown book id: $id" ;; esac
   dir="$(book_dir "$id")"
+  [ -n "$dir" ] || die "unknown book: $id"
   echo ""
   info "$(book_title "$id"): PDF rebuild from $URL"
 

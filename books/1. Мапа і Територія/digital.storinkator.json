@@ -22,8 +22,8 @@
     "after_cover_blank_side": "verso",
     "page_margin_top": 17,
     "page_margin_bottom": 20,
-    "page_margin_gutter": 15,
-    "page_margin_outer": 23.5,
+    "page_margin_gutter": 19.25,
+    "page_margin_outer": 19.25,
     "page_bleed": 0,
     "h1_page_colors": true,
     "h1_page_background": "hsl(200deg, 80%, 50%)",
@@ -225,8 +225,8 @@
     "footnote_policy": "line",
     "system_fonts": [],
     "content_variables": {
-      "TRANSLATION_VERSION": "2.0",
-      "TRANSLATION_DATE": "3 травня 2026"
+      "TRANSLATION_VERSION": "2.2",
+      "TRANSLATION_DATE": "10 жовтня 2026"
     },
     "cover_image": "cover-digital.jpg"
   },

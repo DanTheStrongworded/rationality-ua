@@ -16,18 +16,21 @@
  *      anything added to Storinkator later) from the current color print
  *      config. Existing BW values are never overwritten.
  *   3. Sets TRANSLATION_VERSION / TRANSLATION_DATE in all three configs.
- *   4. Sets page_margin_gutter (spine/inner) / page_margin_outer in all three.
+ *   4. Optionally sets page_margin_gutter (spine/inner) / page_margin_outer
+ *      when --gutter/--outer are given. A release never touches margins
+ *      on its own.
  *
  * Usage:
  *   node release-configs.ts show --book-dir <dir>
  *   node release-configs.ts prepare --book-dir <dir> --version X.X \
- *     --date "..." --gutter 20 --outer 18.5 [--bw-base <file> | --derive-bw]
- *   node release-configs.ts links --repo-root <root> --book <1|2>
+ *     --date "..." [--gutter 20 --outer 18.5] [--bw-base <file> | --derive-bw]
+ *   node release-configs.ts links --repo-root <root> --book <id>
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverBooks, SERIES } from "./books.ts";
 
 const DIGITAL = "digital.storinkator.json";
 const PRINT = "print.storinkator.json";
@@ -93,8 +96,8 @@ type PrepareOptions = {
   bookDir: string;
   version: string;
   date: string;
-  gutter: number;
-  outer: number;
+  gutter: number | null;
+  outer: number | null;
   bwBase: string | null;
   deriveBw: boolean;
 };
@@ -147,16 +150,18 @@ function prepare(o: PrepareOptions): number {
     const cv = ((values.content_variables ??= {}) as JsonObj);
     cv.TRANSLATION_VERSION = o.version;
     cv.TRANSLATION_DATE = o.date;
-    values.page_margin_gutter = o.gutter;
-    values.page_margin_outer = o.outer;
+    if (o.gutter !== null) values.page_margin_gutter = o.gutter;
+    if (o.outer !== null) values.page_margin_outer = o.outer;
   }
 
   saveConfig(digitalPath, digital);
   saveConfig(printPath, color);
   saveConfig(bwPath, bw);
 
-  console.log(`version/date/margins written to all 3 configs: v${o.version}, ${o.date}`);
-  console.log(`gutter(inner)=${o.gutter} outer=${o.outer}`);
+  console.log(`version/date written to all 3 configs: v${o.version}, ${o.date}`);
+  if (o.gutter !== null || o.outer !== null) {
+    console.log(`margins written: gutter(inner)=${o.gutter} outer=${o.outer}`);
+  }
   if (created) {
     const src = o.bwBase ?? "derived from print config (h1 colors off, black accent)";
     console.log(`created ${PRINT_BW} from ${src}`);
@@ -173,8 +178,8 @@ function usage(): void {
   console.log(`Usage:
   node release-configs.ts show --book-dir <dir>
   node release-configs.ts prepare --book-dir <dir> --version X.X --date "..." \\
-    --gutter 20 --outer 18.5 [--bw-base <file> | --derive-bw]
-  node release-configs.ts links --repo-root <root> --book <1|2>`);
+    [--gutter 20 --outer 18.5] [--bw-base <file> | --derive-bw]
+  node release-configs.ts links --repo-root <root> --book <id>`);
 }
 
 function takeValue(args: string[], flag: string): string | null {
@@ -183,38 +188,52 @@ function takeValue(args: string[], flag: string): string | null {
   return args[i + 1]!;
 }
 
-const SERIES = "Раціональність від А до Я";
-const PRINT_FORMAT = "145x205mm";
 const LINKS_BASE =
   "https://github.com/DanTheStrongworded/rationality-ua/raw/refs/heads/main/assets/pdf";
-const BOOK_ORDINALS: Record<string, string> = { "1": "Перша", "2": "Друга" };
 
 /**
  * Point the SELFPUBLISHING.md block-download cells of one book at the freshly
- * generated Color/BW print PDFs (stable names on main). Only touches cells
- * whose file exists on disk; prints what changed.
+ * generated Color/BW print PDFs (stable names on main). The book's column is
+ * found by matching the table header cell against the book folder name, so
+ * future books work as soon as the table gains a column for them. Only
+ * touches cells whose file exists on disk; prints what changed.
  */
-export function updateLinks(repoRoot: string, book: "1" | "2"): number {
-  const ordinal = BOOK_ORDINALS[book]!;
-  const col = Number(book) + 1; // table: label | book1 | book2 | book3
+export function updateLinks(repoRoot: string, bookId: string): number {
+  const id = Number(bookId);
+  const spec = discoverBooks(repoRoot).find((b) => b.id === id);
+  if (!spec) {
+    console.error(`ERROR: unknown book id: ${bookId}`);
+    return 1;
+  }
+  const folderName = spec.dir.split("/").pop()!;
   const mdPath = join(repoRoot, "SELFPUBLISHING.md");
   if (!existsSync(mdPath)) {
     console.error(`ERROR: not found: ${mdPath}`);
     return 1;
   }
+  const lines = readFileSync(mdPath, "utf8").split("\n");
+  const header = lines.find((l) => l.startsWith("|") && l.includes("| Файл |"));
+  if (!header) {
+    console.error("ERROR: downloads table not found in SELFPUBLISHING.md");
+    return 1;
+  }
+  const col = header.split("|").findIndex((c) => c.includes(folderName));
+  if (col < 0) {
+    console.log(`SELFPUBLISHING.md has no column for "${folderName}" — skipping`);
+    return 0;
+  }
   const targets: Array<{ match: string; folder: string; file: string }> = [
     {
       match: "Сторінки в ч/б",
       folder: "print-bw",
-      file: `${SERIES}. Книга ${ordinal} ${PRINT_FORMAT} BW.pdf`,
+      file: `${SERIES}. ${spec.title} ${spec.printFormat} BW.pdf`,
     },
     {
       match: "Сторінки в кольорі",
       folder: "print-color",
-      file: `${SERIES}. Книга ${ordinal} ${PRINT_FORMAT} Color.pdf`,
+      file: `${SERIES}. ${spec.title} ${spec.printFormat} Color.pdf`,
     },
   ];
-  const lines = readFileSync(mdPath, "utf8").split("\n");
   let changed = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -232,7 +251,7 @@ export function updateLinks(repoRoot: string, book: "1" | "2"): number {
       cells[col] = next;
       lines[i] = cells.join("|");
       changed++;
-      console.log(`link: ${target.match} (книга ${book}) -> ${target.file}`);
+      console.log(`link: ${target.match} (книга ${bookId}) -> ${target.file}`);
     }
   }
   if (changed > 0) writeFileSync(mdPath, lines.join("\n"), "utf8");
@@ -245,7 +264,7 @@ export function run(argv: string[]): number {
   if (cmd === "links") {
     const repoRoot = takeValue(rest, "--repo-root");
     const book = takeValue(rest, "--book");
-    if (!repoRoot || (book !== "1" && book !== "2")) {
+    if (!repoRoot || !book) {
       usage();
       return 1;
     }
@@ -265,7 +284,7 @@ export function run(argv: string[]): number {
     const date = takeValue(rest, "--date");
     const gutter = takeValue(rest, "--gutter");
     const outer = takeValue(rest, "--outer");
-    if (!bookDir || !version || !date || !gutter || !outer) {
+    if (!bookDir || !version || !date) {
       usage();
       return 1;
     }
@@ -273,11 +292,19 @@ export function run(argv: string[]): number {
       console.error(`ERROR: version must be X.X, got '${version}'`);
       return 1;
     }
-    const gutterNum = Number(gutter);
-    const outerNum = Number(outer);
-    if (!Number.isFinite(gutterNum) || !Number.isFinite(outerNum)) {
-      console.error(`ERROR: gutter/outer must be numbers, got '${gutter}'/'${outer}'`);
-      return 1;
+    let gutterNum: number | null = null;
+    let outerNum: number | null = null;
+    if (gutter !== null || outer !== null) {
+      if (gutter === null || outer === null) {
+        console.error("ERROR: --gutter and --outer must be given together");
+        return 1;
+      }
+      gutterNum = Number(gutter);
+      outerNum = Number(outer);
+      if (!Number.isFinite(gutterNum) || !Number.isFinite(outerNum)) {
+        console.error(`ERROR: gutter/outer must be numbers, got '${gutter}'/'${outer}'`);
+        return 1;
+      }
     }
     return prepare({
       bookDir,

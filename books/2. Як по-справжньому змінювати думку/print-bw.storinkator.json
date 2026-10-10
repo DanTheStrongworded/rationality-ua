@@ -25,8 +25,8 @@
     "page_margin_gutter": 19.25,
     "page_margin_outer": 19.25,
     "page_bleed": 0,
-    "h1_page_colors": true,
-    "h1_page_background": "hsl(200deg, 80%, 50%)",
+    "h1_page_colors": false,
+    "h1_page_background": "#166600",
     "h1_page_text_color": "#ffffff",
     "running_header": {
       "enabled": true,
@@ -56,7 +56,7 @@
     },
     "folio_count_from_page": 1,
     "folio_show_from_page": 4,
-    "accent_color": "hsl(200deg 100% 35%)",
+    "accent_color": "#166600",
     "text_links": {
       "active": [
         "color"
@@ -88,14 +88,6 @@
       "textAlign": "justify",
       "textAlignLast": "left",
       "textIndent": 1.5
-    },
-    "text_tables": {
-      "active": [
-        "marginLeft",
-        "marginRight"
-      ],
-      "marginLeft": 1.5,
-      "marginRight": 1.5
     },
     "text_sub_sup": {
       "active": [
@@ -228,7 +220,15 @@
       "TRANSLATION_VERSION": "2.2",
       "TRANSLATION_DATE": "10 жовтня 2026"
     },
-    "cover_image": "cover-print.png"
+    "cover_image": "cover-print.png",
+    "text_tables": {
+      "active": [
+        "marginLeft",
+        "marginRight"
+      ],
+      "marginLeft": 1.5,
+      "marginRight": 1.5
+    }
   },
-  "bookScopeHint": "1. Мапа і Територія"
+  "bookScopeHint": "2. Як по-справжньому змінювати думку"
 }

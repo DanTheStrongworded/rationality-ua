@@ -29,47 +29,17 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, basename, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, Page } from "playwright-core";
+import { discoverBooks, SERIES, type BookSpec } from "./books.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
-const BOOKS_ROOT = join(REPO_ROOT, "books");
 let OUT_DIGITAL = join(REPO_ROOT, "assets/pdf/digital");
 let OUT_PRINT_COLOR = join(REPO_ROOT, "assets/pdf/print-color");
 let OUT_PRINT_BW = join(REPO_ROOT, "assets/pdf/print-bw");
 const PROD_STORINKATOR_URL = "https://storinkator.vercel.app";
 const DEFAULT_LOCAL_PORT = 5173;
-const SERIES = "Раціональність від А до Я";
 
 type Variant = "digital" | "color" | "bw";
-
-type BookSpec = {
-  /** Folder under books/ (or books/private/) */
-  dir: string;
-  ordinalUk: string; // Перша / Друга / Третя
-  title: string;
-  printFormat: string; // e.g. 145x205mm
-};
-
-const BOOKS: BookSpec[] = [
-  {
-    dir: "1. Мапа і Територія",
-    ordinalUk: "Перша",
-    title: "Мапа і Територія",
-    printFormat: "145x205mm",
-  },
-  {
-    dir: "2. Як по-справжньому змінювати думку",
-    ordinalUk: "Друга",
-    title: "Як по-справжньому змінювати думку",
-    printFormat: "145x205mm",
-  },
-  {
-    dir: "private/3. Машина у духові",
-    ordinalUk: "Третя",
-    title: "Машина у духові",
-    printFormat: "145x205mm",
-  },
-];
 
 type CliOptions = {
   /** Explicit --url, or null to auto-detect local → prod */
@@ -106,7 +76,7 @@ function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     url: process.env.STORINKATOR_URL ?? null,
     port: DEFAULT_LOCAL_PORT,
-    books: [...BOOKS],
+    books: discoverBooks(),
     variants: ["digital", "color", "bw"],
     startStorinkator: false,
   };
@@ -129,10 +99,10 @@ function parseArgs(argv: string[]): CliOptions {
       opts.port = p;
     } else if (a === "--book") {
       const id = argv[++i] ?? "";
-      if (id === "all") opts.books = [...BOOKS];
+      if (id === "all") opts.books = discoverBooks();
       else {
         const n = Number(id);
-        const match = BOOKS.find((b) => b.dir.startsWith(`${n}.`) || b.dir.includes(`/${n}.`));
+        const match = discoverBooks().find((b) => b.id === n);
         if (!match) throw new Error(`Unknown book id: ${id}`);
         opts.books = [match];
       }
@@ -186,7 +156,7 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function pdfBaseName(book: BookSpec): string {
-  return `${SERIES}. Книга ${book.ordinalUk}`;
+  return `${SERIES}. ${book.title}`;
 }
 
 function digitalOutPath(book: BookSpec): string {
@@ -203,7 +173,7 @@ function printOutPath(book: BookSpec, variant: "color" | "bw"): string {
 }
 
 function bookAbsDir(book: BookSpec): string {
-  return join(BOOKS_ROOT, book.dir);
+  return join(REPO_ROOT, book.dir);
 }
 
 function configFileFor(variant: Variant): string {
@@ -545,7 +515,7 @@ async function main() {
 
   console.log("");
   log("PDF export");
-  log(`  books:    ${opts.books.map((b) => b.ordinalUk).join(", ")}`);
+  log(`  books:    ${opts.books.map((b) => b.title).join(", ")}`);
   log(`  variants: ${opts.variants.join(" + ")}`);
   log(
     `  target:   ${opts.url ?? `local :${opts.port} → fallback ${PROD_STORINKATOR_URL}`}`,
