@@ -6,22 +6,20 @@
  *   2. local http://127.0.0.1:<port> if reachable (default port 5173, override with --port)
  *   3. https://storinkator.vercel.app (production)
  *
- * CMYK conversion always runs locally via preprint.mjs + Ghostscript (PSO Uncoated v3).
- *
  * Requires:
  *   - Brave / Chrome / Edge / Chromium installed
- *   - Ghostscript (`gs`) for CMYK (print only)
  *
  * Usage (from code/scripts):
  *   bun run generate-pdfs.ts
  *   bun run generate-pdfs.ts --book 1 --digital
+ *   bun run generate-pdfs.ts --book 3 --variants bw --assets /path/to/private/assets
  *   bun run generate-pdfs.ts --port 5174
  *   bun run generate-pdfs.ts --url https://storinkator.vercel.app
  *   bun run generate-pdfs.ts --start   # auto-start local vite if missing
  *
  * Env:
  *   STORINKATOR_URL   force URL (skips auto-detect)
- *   STORINKATOR_DIR   path to storinkator repo (optional; --start + ICC lookup)
+ *   STORINKATOR_DIR   path to storinkator repo (optional; with --start)
  *   CHROME_PATH       override browser executable
  */
 
@@ -35,14 +33,14 @@ import type { Browser, Page } from "playwright-core";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
 const BOOKS_ROOT = join(REPO_ROOT, "books");
-const OUT_DIGITAL = join(REPO_ROOT, "assets/pdf/digital");
-const OUT_PRINT = join(REPO_ROOT, "assets/pdf/print");
+let OUT_DIGITAL = join(REPO_ROOT, "assets/pdf/digital");
+let OUT_PRINT_COLOR = join(REPO_ROOT, "assets/pdf/print-color");
+let OUT_PRINT_BW = join(REPO_ROOT, "assets/pdf/print-bw");
 const PROD_STORINKATOR_URL = "https://storinkator.vercel.app";
 const DEFAULT_LOCAL_PORT = 5173;
-const DEFAULT_ICC = "PSOuncoated_v3_FOGRA52.icc";
 const SERIES = "Раціональність від А до Я";
 
-type Variant = "digital" | "print";
+type Variant = "digital" | "color" | "bw";
 
 type BookSpec = {
   /** Folder under books/ (or books/private/) */
@@ -78,9 +76,7 @@ type CliOptions = {
   url: string | null;
   port: number;
   books: BookSpec[];
-  digital: boolean;
-  print: boolean;
-  cmyk: boolean;
+  variants: Variant[];
   /** Auto-start local vite only when explicitly requested */
   startStorinkator: boolean;
 };
@@ -111,19 +107,21 @@ function parseArgs(argv: string[]): CliOptions {
     url: process.env.STORINKATOR_URL ?? null,
     port: DEFAULT_LOCAL_PORT,
     books: [...BOOKS],
-    digital: true,
-    print: true,
-    cmyk: true,
+    variants: ["digital", "color", "bw"],
     startStorinkator: false,
   };
 
-  let digitalSet = false;
-  let printSet = false;
+  let variantsSet = false;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--url") opts.url = argv[++i] ?? opts.url;
-    else if (a === "--port") {
+    else if (a === "--assets") {
+      const dir = resolve(argv[++i] ?? "");
+      OUT_DIGITAL = join(dir, "pdf/digital");
+      OUT_PRINT_COLOR = join(dir, "pdf/print-color");
+      OUT_PRINT_BW = join(dir, "pdf/print-bw");
+    } else if (a === "--port") {
       const p = Number(argv[++i]);
       if (!Number.isInteger(p) || p < 1 || p > 65535) {
         throw new Error(`Invalid --port: ${p}`);
@@ -138,22 +136,39 @@ function parseArgs(argv: string[]): CliOptions {
         if (!match) throw new Error(`Unknown book id: ${id}`);
         opts.books = [match];
       }
+    } else if (a === "--variants") {
+      const list = (argv[++i] ?? "").split(",").map((s) => s.trim().toLowerCase());
+      const mapped = list.map((v) => (v === "print" ? "color" : v));
+      for (const v of mapped) {
+        if (v !== "digital" && v !== "color" && v !== "bw") {
+          throw new Error(`Unknown variant: ${v} (want digital,color,bw)`);
+        }
+      }
+      opts.variants = mapped as Variant[];
+      variantsSet = true;
     } else if (a === "--digital") {
-      opts.digital = true;
-      digitalSet = true;
-    } else if (a === "--print") {
-      opts.print = true;
-      printSet = true;
-    } else if (a === "--no-digital") opts.digital = false;
-    else if (a === "--no-print") opts.print = false;
-    else if (a === "--no-cmyk") opts.cmyk = false;
+      opts.variants = ["digital"];
+      variantsSet = true;
+    } else if (a === "--print" || a === "--color") {
+      opts.variants = ["color"];
+      variantsSet = true;
+    } else if (a === "--bw") {
+      opts.variants = ["bw"];
+      variantsSet = true;
+    } else if (a === "--no-digital") opts.variants = opts.variants.filter((v) => v !== "digital");
+    else if (a === "--no-print" || a === "--no-color") opts.variants = opts.variants.filter((v) => v !== "color");
+    else if (a === "--no-bw") opts.variants = opts.variants.filter((v) => v !== "bw");
     else if (a === "--start") opts.startStorinkator = true;
     else if (a === "--no-start") opts.startStorinkator = false;
     else if (a === "--help" || a === "-h") {
       console.log(`Usage: bun run generate-pdfs.ts [options]
   --book <1|2|3|all>   Which book(s) (default: all)
-  --digital / --print   Only that variant (default: both)
-  --no-digital|--no-print|--no-cmyk
+  --variants <list>     Comma list of digital,color,bw (default: all three;
+                        \"print\" accepted as alias of color)
+  --digital/--print/--color/--bw   Only that variant (legacy --print = color)
+  --no-digital|--no-print|--no-bw
+  --assets <dir>        Assets root holding pdf/digital + pdf/print-color + pdf/print-bw
+                        (default: repo assets/; use for the private book)
   --port <n>            Local vite port to try first (default ${DEFAULT_LOCAL_PORT})
   --url <storinkator>   Force URL (skip local/prod auto-detect)
   --start               Auto-start local vite if not reachable
@@ -162,9 +177,10 @@ function parseArgs(argv: string[]): CliOptions {
     } else throw new Error(`Unknown arg: ${a}`);
   }
 
-  // If user passed only --digital or only --print, disable the other.
-  if (digitalSet && !printSet) opts.print = false;
-  if (printSet && !digitalSet) opts.digital = false;
+  if (!variantsSet) {
+    // Back-compat placeholder: explicit --digital/--print handled above.
+  }
+  if (opts.variants.length === 0) throw new Error("No variants selected.");
 
   return opts;
 }
@@ -177,12 +193,13 @@ function digitalOutPath(book: BookSpec): string {
   return join(OUT_DIGITAL, `${pdfBaseName(book)}.pdf`);
 }
 
-function printOutPath(book: BookSpec): string {
-  return join(OUT_PRINT, `${pdfBaseName(book)} ${book.printFormat}.pdf`);
+function variantLabel(variant: Variant): string {
+  return variant === "digital" ? "digital" : variant === "color" ? "Color" : "BW";
 }
 
-function printCmykOutPath(book: BookSpec): string {
-  return join(OUT_PRINT, `${pdfBaseName(book)} ${book.printFormat} CMYK.pdf`);
+function printOutPath(book: BookSpec, variant: "color" | "bw"): string {
+  const dir = variant === "color" ? OUT_PRINT_COLOR : OUT_PRINT_BW;
+  return join(dir, `${pdfBaseName(book)} ${book.printFormat} ${variantLabel(variant)}.pdf`);
 }
 
 function bookAbsDir(book: BookSpec): string {
@@ -190,7 +207,9 @@ function bookAbsDir(book: BookSpec): string {
 }
 
 function configFileFor(variant: Variant): string {
-  return variant === "digital" ? "digital.storinkator.json" : "print.storinkator.json";
+  if (variant === "digital") return "digital.storinkator.json";
+  if (variant === "bw") return "print-bw.storinkator.json";
+  return "print.storinkator.json";
 }
 
 function findBrowserExecutable(): string {
@@ -222,20 +241,6 @@ function findStorinkatorDir(): string | null {
   const sibling = resolve(REPO_ROOT, "../storinkator");
   if (existsSync(join(sibling, "package.json"))) return sibling;
   return null;
-}
-
-function findIccPath(): string {
-  const storinkator = findStorinkatorDir();
-  const candidates = [
-    storinkator ? join(storinkator, "iccprofiles", DEFAULT_ICC) : null,
-    join(REPO_ROOT, "iccprofiles", DEFAULT_ICC),
-  ].filter(Boolean) as string[];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  throw new Error(
-    `ICC profile ${DEFAULT_ICC} not found. Expected under storinkator/iccprofiles/.`,
-  );
 }
 
 async function urlReachable(url: string): Promise<boolean> {
@@ -506,38 +511,11 @@ async function exportPdf(page: Page, outPath: string, variant: Variant, book: Bo
   logOk(`Wrote ${relative(REPO_ROOT, outPath)} (${(bytes / 1024 / 1024).toFixed(2)} MB)`);
 }
 
-async function convertCmyk(rgbPdf: string, cmykPdf: string) {
-  const icc = findIccPath();
-  logStep("CMYK conversion", `ICC ${basename(icc)}`);
-  await mkdir(dirname(cmykPdf), { recursive: true });
-
-  const preprint = join(__dirname, "preprint.mjs");
-  const result = spawn("node", [preprint, rgbPdf, cmykPdf, "--icc", icc], {
-    cwd: __dirname,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  const forward = (buf: Buffer, stream: NodeJS.WritableStream) => {
-    const lines = buf.toString().split(/\r?\n/);
-    for (const line of lines) {
-      if (line.trim()) log(`  ${line}`);
-    }
-  };
-  result.stdout?.on("data", (b) => forward(b, process.stdout));
-  result.stderr?.on("data", (b) => forward(b, process.stderr));
-
-  const code = await new Promise<number>((resolvePromise) => {
-    result.on("exit", (c) => resolvePromise(c ?? 1));
-  });
-  if (code !== 0) throw new Error(`preprint.mjs failed (exit ${code})`);
-  logOk(`Wrote ${relative(REPO_ROOT, cmykPdf)}`);
-}
-
 async function exportBookVariant(
   page: Page,
   book: BookSpec,
   variant: Variant,
-  opts: CliOptions,
+  _opts: CliOptions,
   storinkatorUrl: string,
 ) {
   const label = `${book.title} [${variant}]`;
@@ -553,12 +531,8 @@ async function exportBookVariant(
   await paginate(page);
 
   const out =
-    variant === "digital" ? digitalOutPath(book) : printOutPath(book);
+    variant === "digital" ? digitalOutPath(book) : printOutPath(book, variant);
   await exportPdf(page, out, variant, book);
-
-  if (variant === "print" && opts.cmyk) {
-    await convertCmyk(out, printCmykOutPath(book));
-  }
 
   logOk(`Finished ${label} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
@@ -566,13 +540,13 @@ async function exportBookVariant(
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   mkdirSync(OUT_DIGITAL, { recursive: true });
-  mkdirSync(OUT_PRINT, { recursive: true });
+  mkdirSync(OUT_PRINT_COLOR, { recursive: true });
+  mkdirSync(OUT_PRINT_BW, { recursive: true });
 
   console.log("");
   log("PDF export");
   log(`  books:    ${opts.books.map((b) => b.ordinalUk).join(", ")}`);
-  log(`  variants: ${[opts.digital && "digital", opts.print && "print"].filter(Boolean).join(" + ")}`);
-  if (opts.print) log(`  CMYK:     ${opts.cmyk ? `yes (${DEFAULT_ICC}, local gs)` : "no"}`);
+  log(`  variants: ${opts.variants.join(" + ")}`);
   log(
     `  target:   ${opts.url ?? `local :${opts.port} → fallback ${PROD_STORINKATOR_URL}`}`,
   );
@@ -599,8 +573,9 @@ async function main() {
       page.setDefaultTimeout(120_000);
 
       for (const book of opts.books) {
-        if (opts.digital) await exportBookVariant(page, book, "digital", opts, storinkatorUrl);
-        if (opts.print) await exportBookVariant(page, book, "print", opts, storinkatorUrl);
+        for (const variant of opts.variants) {
+          await exportBookVariant(page, book, variant, opts, storinkatorUrl);
+        }
       }
     } finally {
       await browser.close();
@@ -608,8 +583,9 @@ async function main() {
 
     console.log("");
     logOk("All exports complete");
-    log(`  digital → ${relative(REPO_ROOT, OUT_DIGITAL)}`);
-    log(`  print   → ${relative(REPO_ROOT, OUT_PRINT)}`);
+    log(`  digital     → ${relative(REPO_ROOT, OUT_DIGITAL)}`);
+    log(`  print-color → ${relative(REPO_ROOT, OUT_PRINT_COLOR)}`);
+    log(`  print-bw    → ${relative(REPO_ROOT, OUT_PRINT_BW)}`);
   } finally {
     if (storinkatorProc) {
       logStep("Stopping Storinkator we started");

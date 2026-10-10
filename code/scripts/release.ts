@@ -1,11 +1,17 @@
-const fs = require("fs").promises;
-const path = require("path");
-const { execFile } = require("child_process");
-const { promisify } = require("util");
-const readline = require("readline");
+import fs from "node:fs/promises";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
-const BOOKS_DIR = path.join(__dirname, "..", "..", "books");
+const BOOKS_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "books",
+);
 const STORINKATOR_URL = "https://storinkator.vercel.app";
 
 const UKRAINIAN_MONTHS = [
@@ -23,15 +29,21 @@ const UKRAINIAN_MONTHS = [
   "грудня",
 ];
 
-function question(rl, prompt) {
+export type Book = {
+  name: string;
+  directory: string;
+  configPath: string;
+};
+
+function question(rl: readline.Interface, prompt: string): Promise<string> {
   return new Promise((resolve) => rl.question(prompt, resolve));
 }
 
-function formatUkrainianDate(date = new Date()) {
+export function formatUkrainianDate(date = new Date()): string {
   return `${date.getDate()} ${UKRAINIAN_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-function parseVersion(version) {
+export function parseVersion(version: string): { major: number; minor: number } {
   const match = String(version).trim().match(/^(\d+)\.(\d+)$/);
 
   if (!match) {
@@ -44,7 +56,7 @@ function parseVersion(version) {
   };
 }
 
-function incrementVersion(currentVersion, updateType) {
+export function incrementVersion(currentVersion: string, updateType: string): string {
   const { major, minor } = parseVersion(currentVersion);
 
   if (updateType === "major") {
@@ -58,13 +70,13 @@ function incrementVersion(currentVersion, updateType) {
   throw new Error(`Невідомий тип оновлення версії: ${updateType}`);
 }
 
-function isValidVersion(version) {
+export function isValidVersion(version: string): boolean {
   return /^\d+\.\d+$/.test(String(version).trim());
 }
 
-async function findBooks() {
+export async function findBooks(): Promise<Book[]> {
   const entries = await fs.readdir(BOOKS_DIR, { withFileTypes: true });
-  const books = [];
+  const books: Book[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -72,14 +84,14 @@ async function findBooks() {
     const bookPath = path.join(BOOKS_DIR, entry.name);
     const files = await fs.readdir(bookPath);
     const configFiles = files.filter(
-      (file) => file.startsWith("Storinkator Config") && file.endsWith(".json")
+      (file) => file.startsWith("Storinkator Config") && file.endsWith(".json"),
     );
 
     if (configFiles.length === 1) {
       books.push({
         name: entry.name,
         directory: bookPath,
-        configPath: path.join(bookPath, configFiles[0]),
+        configPath: path.join(bookPath, configFiles[0]!),
       });
     }
   }
@@ -87,7 +99,7 @@ async function findBooks() {
   return books.sort((a, b) => a.name.localeCompare(b.name, "uk"));
 }
 
-async function chooseBook(rl, books) {
+export async function chooseBook(rl: readline.Interface, books: Book[]): Promise<Book> {
   if (books.length === 0) {
     throw new Error("У папці books не знайдено книг із конфігурацією Storinkator.");
   }
@@ -100,21 +112,23 @@ async function chooseBook(rl, books) {
     const index = Number(answer) - 1;
 
     if (Number.isInteger(index) && index >= 0 && index < books.length) {
-      return books[index];
+      return books[index]!;
     }
 
     console.log(`Введіть число від 1 до ${books.length}.`);
   }
 }
 
-async function chooseVersion(rl, currentVersion) {
+export async function chooseVersion(
+  rl: readline.Interface,
+  currentVersion: string,
+): Promise<string> {
   console.log(`\nПоточна версія: ${currentVersion}`);
 
   while (true) {
-    const updateType = (await question(
-      rl,
-      "Оновлення версії — major, minor чи custom? [minor]: "
-    ))
+    const updateType = (
+      await question(rl, "Оновлення версії — major, minor чи custom? [minor]: ")
+    )
       .trim()
       .toLowerCase();
     const selectedType = updateType || "minor";
@@ -139,8 +153,14 @@ async function chooseVersion(rl, currentVersion) {
   }
 }
 
-async function updateConfig(book, version, releaseDate = formatUkrainianDate()) {
-  const config = JSON.parse(await fs.readFile(book.configPath, "utf8"));
+export async function updateConfig(
+  book: Book,
+  version: string,
+  releaseDate = formatUkrainianDate(),
+): Promise<{ version: string; releaseDate: string }> {
+  const config = JSON.parse(await fs.readFile(book.configPath, "utf8")) as {
+    values?: { content_variables?: Record<string, string> };
+  };
 
   if (!config.values || !config.values.content_variables) {
     throw new Error(`У конфігурації книги немає values.content_variables: ${book.configPath}`);
@@ -154,11 +174,11 @@ async function updateConfig(book, version, releaseDate = formatUkrainianDate()) 
   return { version, releaseDate };
 }
 
-async function runGit(args) {
-  return execFileAsync("git", args, { cwd: path.join(__dirname, "..", "..") });
+async function runGit(args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd: path.join(BOOKS_DIR, "..") });
 }
 
-async function commitAndPush(book, version) {
+async function commitAndPush(book: Book, version: string): Promise<string> {
   const commitMessage = `Release ${book.name} v${version}`;
 
   await runGit(["add", "-A"]);
@@ -168,8 +188,8 @@ async function commitAndPush(book, version) {
   return commitMessage;
 }
 
-async function openStorinkator() {
-  const commands = {
+export async function openStorinkator(): Promise<void> {
+  const commands: Partial<Record<NodeJS.Platform, [string, string[]]>> = {
     darwin: ["open", [STORINKATOR_URL]],
     win32: ["cmd", ["/c", "start", "", STORINKATOR_URL]],
     linux: ["xdg-open", [STORINKATOR_URL]],
@@ -184,7 +204,7 @@ async function openStorinkator() {
   await execFileAsync(command[0], command[1]);
 }
 
-async function main() {
+export async function main(): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -193,7 +213,9 @@ async function main() {
   try {
     const books = await findBooks();
     const book = await chooseBook(rl, books);
-    const config = JSON.parse(await fs.readFile(book.configPath, "utf8"));
+    const config = JSON.parse(await fs.readFile(book.configPath, "utf8")) as {
+      values?: { content_variables?: { TRANSLATION_VERSION?: string } };
+    };
     const currentVersion = config.values?.content_variables?.TRANSLATION_VERSION;
 
     if (!currentVersion) {
@@ -203,15 +225,10 @@ async function main() {
     const version = await chooseVersion(rl, currentVersion);
     const { releaseDate } = await updateConfig(book, version);
 
-    console.log(
-      `\nКонфігурацію оновлено: ${book.name} — версія ${version}, дата ${releaseDate}.`
-    );
+    console.log(`\nКонфігурацію оновлено: ${book.name} — версія ${version}, дата ${releaseDate}.`);
 
     if (
-      (await question(
-        rl,
-        "Додати зміни до коміту та виконати commit/push з автоматичним повідомленням? [y/N]: "
-      ))
+      (await question(rl, "Додати зміни до коміту та виконати commit/push з автоматичним повідомленням? [y/N]: "))
         .trim()
         .toLowerCase()
         .startsWith("y")
@@ -220,7 +237,7 @@ async function main() {
         const commitMessage = await commitAndPush(book, version);
         console.log(`Зміни закомічено та відправлено: ${commitMessage}`);
       } catch (error) {
-        console.error(`Не вдалося виконати commit/push: ${error.message}`);
+        console.error(`Не вдалося виконати commit/push: ${(error as Error).message}`);
       }
     }
 
@@ -234,7 +251,7 @@ async function main() {
         await openStorinkator();
         console.log(`Відкрито ${STORINKATOR_URL}.`);
       } catch (error) {
-        console.error(`Не вдалося відкрити Storinkator: ${error.message}`);
+        console.error(`Не вдалося відкрити Storinkator: ${(error as Error).message}`);
         console.log(`Відкрийте вручну: ${STORINKATOR_URL}`);
       }
     }
@@ -243,21 +260,11 @@ async function main() {
   }
 }
 
-if (require.main === module) {
+const invokedAsMain =
+  process.argv[1] != null && fileURLToPath(import.meta.url) === process.argv[1];
+if (invokedAsMain) {
   main().catch((error) => {
-    console.error(`Помилка: ${error.message}`);
+    console.error(`Помилка: ${(error as Error).message}`);
     process.exitCode = 1;
   });
 }
-
-module.exports = {
-  chooseBook,
-  chooseVersion,
-  findBooks,
-  formatUkrainianDate,
-  incrementVersion,
-  isValidVersion,
-  openStorinkator,
-  parseVersion,
-  updateConfig,
-};

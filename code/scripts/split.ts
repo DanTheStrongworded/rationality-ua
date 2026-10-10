@@ -1,5 +1,6 @@
-const fs = require("fs").promises;
-const path = require("path");
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Ukrainian alphabet for folder naming
 const ALPHABET = [
@@ -31,27 +32,27 @@ const ALPHABET = [
   "Z",
 ];
 
-function fixMarkdownEmphasisSafe(text) {
+export function fixMarkdownEmphasisSafe(text: string): string {
   // Match a single '*' (not part of **), capture anything up to a space before a single closing '*'
   const regex = /(?<!\*)\*([^*]*?)\s\*(?!\*)/g;
-  return text.replace(regex, (_, content) => `*${content}* `);
+  return text.replace(regex, (_, content: string) => `*${content}* `);
 }
 
-function fixLineEmphasis(text) {
+export function fixLineEmphasis(text: string): string {
   // 1. Fix malformed emphasis with space inside (e.g. _ текст _ → _текст_)
   text = text.replace(
     /([*_])\s+([^\s][^*_]*?[^\s])\s+\1/g,
-    (_, marker, content) => {
+    (_, marker: string, content: string) => {
       return `${marker}${content}${marker}`;
-    }
+    },
   );
 
   // 2. Fix cases with space only before or after
-  text = text.replace(/([*_])\s+([^\s][^*_]*?)\1/g, (_, marker, content) => {
+  text = text.replace(/([*_])\s+([^\s][^*_]*?)\1/g, (_, marker: string, content: string) => {
     return `${marker}${content}${marker}`;
   });
 
-  text = text.replace(/([*_])([^\s][^*_]*?)\s+\1/g, (_, marker, content) => {
+  text = text.replace(/([*_])([^\s][^*_]*?)\s+\1/g, (_, marker: string, content: string) => {
     return `${marker}${content}${marker}`;
   });
 
@@ -63,12 +64,12 @@ function fixLineEmphasis(text) {
 }
 
 // Function to extract footnote definitions from the document
-function extractFootnotes(content) {
-  const footnotes = new Map();
+export function extractFootnotes(content: string): Map<string, string> {
+  const footnotes = new Map<string, string>();
   const lines = content.split("\n");
 
-  let currentId = null;
-  let currentDef = [];
+  let currentId: string | null = null;
+  let currentDef: string[] = [];
 
   for (const line of lines) {
     const defMatch = line.match(/^\[\^([^\]]+)\]:\s*(.*)/);
@@ -76,8 +77,8 @@ function extractFootnotes(content) {
       if (currentId) {
         footnotes.set(currentId, currentDef.join("\n").trim());
       }
-      currentId = defMatch[1];
-      currentDef = [defMatch[2]];
+      currentId = defMatch[1]!;
+      currentDef = [defMatch[2]!];
     } else if (currentId && /^\s+/.test(line)) {
       // Continuation of the footnote
       currentDef.push(line);
@@ -99,18 +100,21 @@ function extractFootnotes(content) {
 }
 
 // Function to renumber footnotes in content and return mapping
-function renumberFootnotes(contentLines, footnotes) {
-  const result = [];
-  let currentParagraph = [];
+export function renumberFootnotes(
+  contentLines: string[],
+  footnotes: Map<string, string>,
+): string[] {
+  const result: string[] = [];
+  let currentParagraph: string[] = [];
   let footnoteCounter = 1;
-  const footnoteMapping = new Map(); // originalId -> newNumber
-  const usedFootnotes = new Map(); // newNumber -> footnoteContent
+  const footnoteMapping = new Map<string, number>(); // originalId -> newNumber
+  const usedFootnotes = new Map<number, string | undefined>(); // newNumber -> footnoteContent
 
-  const processParagraph = () => {
+  const processParagraph = (): void => {
     if (currentParagraph.length > 0) {
       // Process footnote references in the paragraph and renumber them
       const processedParagraph = currentParagraph.map((line) => {
-        return line.replace(/\[\^([^\]]+)\]/g, (match, originalId) => {
+        return line.replace(/\[\^([^\]]+)\]/g, (match, originalId: string) => {
           if (footnotes.has(originalId)) {
             if (!footnoteMapping.has(originalId)) {
               footnoteMapping.set(originalId, footnoteCounter);
@@ -131,10 +135,10 @@ function renumberFootnotes(contentLines, footnotes) {
       const footnoteRefs = paragraphText.match(/\[\^(\d+)\]/g);
 
       if (footnoteRefs) {
-        const addedFootnotes = new Set();
+        const addedFootnotes = new Set<number>();
 
         for (const ref of footnoteRefs) {
-          const id = parseInt(ref.match(/\[\^(\d+)\]/)[1]);
+          const id = parseInt(ref.match(/\[\^(\d+)\]/)![1]!);
           if (usedFootnotes.has(id) && !addedFootnotes.has(id)) {
             result.push(`[^${id}]: ${usedFootnotes.get(id)}`);
             addedFootnotes.add(id);
@@ -147,7 +151,7 @@ function renumberFootnotes(contentLines, footnotes) {
   };
 
   for (let i = 0; i < contentLines.length; i++) {
-    const line = contentLines[i];
+    const line = contentLines[i]!;
 
     // Skip footnote definition lines (they'll be recreated with new numbers)
     if (line.match(/^\[\^([^\]]+)\]:/)) {
@@ -159,7 +163,7 @@ function renumberFootnotes(contentLines, footnotes) {
       processParagraph();
 
       // Only add empty line if the next line isn't empty (avoid multiple empty lines)
-      if (i + 1 < contentLines.length && contentLines[i + 1].trim() !== "") {
+      if (i + 1 < contentLines.length && contentLines[i + 1]!.trim() !== "") {
         result.push("");
       }
     } else {
@@ -174,14 +178,14 @@ function renumberFootnotes(contentLines, footnotes) {
 }
 
 // Function to normalize heading levels (shift all headings to start from L1)
-function normalizeHeadingLevels(contentLines) {
+export function normalizeHeadingLevels(contentLines: string[]): string[] {
   // Find the minimum heading level in the content
   let minLevel = 7; // Start with max possible level + 1
 
   for (const line of contentLines) {
     const match = line.match(/^(#{1,6})\s/);
     if (match) {
-      const level = match[1].length;
+      const level = match[1]!.length;
       minLevel = Math.min(minLevel, level);
     }
   }
@@ -198,7 +202,7 @@ function normalizeHeadingLevels(contentLines) {
   return contentLines.map((line) => {
     const match = line.match(/^(#{1,6})(\s.*)/);
     if (match) {
-      const currentLevel = match[1].length;
+      const currentLevel = match[1]!.length;
       const newLevel = Math.max(2, currentLevel - levelShift); // Ensure minimum L2
       const newHeading = "#".repeat(newLevel) + match[2];
       return newHeading;
@@ -208,7 +212,7 @@ function normalizeHeadingLevels(contentLines) {
 }
 
 // Function to clean text from bold/italic formatting
-function cleanFormatting(text) {
+export function cleanFormatting(text: string): string {
   return text
     .replace(/\*\*\*(.*?)\*\*\*/g, "$1") // Remove bold+italic ***text***
     .replace(/\*\*(.*?)\*\*/g, "$1") // Remove bold **text**
@@ -218,7 +222,7 @@ function cleanFormatting(text) {
     .trim();
 }
 
-async function splitMarkdownFile(inputFile, outputDir) {
+export async function splitMarkdownFile(inputFile: string, outputDir: string): Promise<void> {
   try {
     // Read the markdown file
     const content = await fs.readFile(inputFile, "utf-8");
@@ -232,15 +236,15 @@ async function splitMarkdownFile(inputFile, outputDir) {
     // Split content by lines
     const lines = content.split("\n");
 
-    let currentLevel1 = null;
-    let currentLevel2 = null;
-    let currentContent = [];
+    let currentLevel1: string | null = null;
+    let currentLevel2: string | null = null;
+    const currentContent: string[] = [];
     let level1Index = 0;
     let level2Index = 0; // Global counter for level 2 headings
 
-    const processCurrentContent = async () => {
+    const processCurrentContent = async (): Promise<void> => {
       if (currentLevel2 && currentContent.length > 0) {
-        const cleanLevel1 = cleanFileName(cleanFormatting(currentLevel1));
+        const cleanLevel1 = cleanFileName(cleanFormatting(currentLevel1!));
         const cleanLevel2 = cleanFileName(cleanFormatting(currentLevel2));
 
         const folderName = `${ALPHABET[level1Index - 1]}. ${cleanLevel1}`;
@@ -254,19 +258,14 @@ async function splitMarkdownFile(inputFile, outputDir) {
         await fs.mkdir(folderPath, { recursive: true });
 
         // Normalize heading levels in content
-        const normalizedContent = normalizeHeadingLevels(
-          currentContent.slice(1)
-        );
+        const normalizedContent = normalizeHeadingLevels(currentContent.slice(1));
 
         // Renumber footnotes starting from 1 for each file
-        const contentWithRenumberedFootnotes = renumberFootnotes(
-          normalizedContent,
-          footnotes
-        );
+        const contentWithRenumberedFootnotes = renumberFootnotes(normalizedContent, footnotes);
 
         // Fix incorrect emphasys edges
         const emphasysfixedContent = fixMarkdownEmphasisSafe(
-          contentWithRenumberedFootnotes.join("\n")
+          contentWithRenumberedFootnotes.join("\n"),
         );
 
         // Prepare file content with L1 heading at the top
@@ -281,7 +280,7 @@ async function splitMarkdownFile(inputFile, outputDir) {
     };
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      const line = lines[i]!;
 
       // Check for level 1 heading (#)
       if (line.match(/^# [^#]/)) {
@@ -291,7 +290,7 @@ async function splitMarkdownFile(inputFile, outputDir) {
         // Reset content and update level 1 info
         currentLevel1 = line.substring(2).trim();
         currentLevel2 = null;
-        currentContent = [];
+        currentContent.length = 0;
         level1Index++;
 
         console.log(`Found Level 1: ${currentLevel1}`);
@@ -305,7 +304,8 @@ async function splitMarkdownFile(inputFile, outputDir) {
 
         // Reset content and update level 2 info
         currentLevel2 = line.substring(3).trim();
-        currentContent = [line]; // Include the heading in content
+        currentContent.length = 0;
+        currentContent.push(line); // Include the heading in content
         level2Index++;
 
         console.log(`Found Level 2: ${currentLevel2}`);
@@ -325,13 +325,13 @@ async function splitMarkdownFile(inputFile, outputDir) {
     console.log(`Total Level 1 sections: ${level1Index}`);
     console.log(`Total Level 2 files: ${level2Index - 1}`);
   } catch (error) {
-    console.error("Error processing file:", error.message);
+    console.error("Error processing file:", (error as Error).message);
     process.exit(1);
   }
 }
 
 // Function to clean filename (replace forbidden characters)
-function cleanFileName(name) {
+export function cleanFileName(name: string): string {
   return name
     .replace(/[<>:"/\\|?*]/g, ".") // Replace forbidden characters with dot
     .replace(/[\x00-\x1f\x80-\x9f]/g, " ") // Replace control characters
@@ -343,24 +343,22 @@ function cleanFileName(name) {
 }
 
 // Main execution
-async function main() {
+export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.length < 1) {
-    console.log(
-      "Usage: node script.js <input-markdown-file> [output-directory]"
-    );
-    console.log("Example: node script.js document.md ./output");
+    console.log("Usage: node split.ts <input-markdown-file> [output-directory]");
+    console.log("Example: node split.ts document.md ./output");
     process.exit(1);
   }
 
-  const inputFile = args[0];
+  const inputFile = args[0]!;
   const outputDir = args[1] || "./output";
 
   // Check if input file exists
   try {
     await fs.access(inputFile);
-  } catch (error) {
+  } catch {
     console.error(`Input file '${inputFile}' does not exist.`);
     process.exit(1);
   }
@@ -373,6 +371,8 @@ async function main() {
 }
 
 // Run the script
-if (require.main === module) {
-  main();
+const invokedAsMain =
+  process.argv[1] != null && fileURLToPath(import.meta.url) === process.argv[1];
+if (invokedAsMain) {
+  void main();
 }
