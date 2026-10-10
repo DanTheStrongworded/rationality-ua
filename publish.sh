@@ -15,7 +15,9 @@
 #      with origin — a merge conflict found here stops you BEFORE the long
 #      release work, with a note to звернутися до Дена or a paste-ready
 #      AI prompt describing the situation
-#   1. finds changed books (uncommitted work or unpublished commits)
+#   1. finds changed books (uncommitted work or unpublished commits);
+#      a single changed book is selected automatically, several are
+#      confirmed, clean books are only summarized
 #   2. commits + pushes storinkator (PDFs build from storinkator.vercel.app,
 #      so the site must have the latest code first)
 #   3. per changed book asks: version bump (minor X.Y+1 / major / custom)
@@ -278,16 +280,20 @@ book_changes() {
 }
 
 CHANGED_IDS=""
+UNCHANGED_IDS=""
 for id in $BOOK_IDS; do
-  echo ""
-  echo "  $id. $SERIES. $(book_title "$id")"
-  if book_changes "$id"; then
+  out="$(book_changes "$id")"
+  if [ $? -eq 0 ]; then
+    echo ""
+    echo "  $id. $SERIES. $(book_title "$id")"
+    echo "$out"
     CHANGED_IDS="$CHANGED_IDS $id"
   else
-    echo "    (no changes)"
+    UNCHANGED_IDS="$UNCHANGED_IDS $id"
   fi
 done
 echo ""
+[ -n "$UNCHANGED_IDS" ] && note "unchanged:$UNCHANGED_IDS"
 
 RELEASE_IDS=""
 if [ -z "$CHANGED_IDS" ]; then
@@ -298,6 +304,9 @@ if [ -z "$CHANGED_IDS" ]; then
     echo "Nothing to do."
     exit 0
   fi
+elif [ "$(echo "$CHANGED_IDS" | wc -w)" -eq 1 ]; then
+  RELEASE_IDS="$CHANGED_IDS"
+  note "releasing the only changed book:$RELEASE_IDS"
 else
   echo "Changed books:$CHANGED_IDS"
   if ask_yn "Release all of them?" "Y"; then
