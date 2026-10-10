@@ -89,6 +89,14 @@
       "textAlignLast": "left",
       "textIndent": 1.5
     },
+    "text_tables": {
+      "active": [
+        "marginLeft",
+        "marginRight"
+      ],
+      "marginLeft": 1.5,
+      "marginRight": 1.5
+    },
     "text_sub_sup": {
       "active": [
         "fontSize",
