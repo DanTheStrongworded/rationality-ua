@@ -14,8 +14,8 @@
 #   4. prepares 3 configs per book (digital, color print, BW print):
 #      creates print-bw.storinkator.json from the print-bw branch when
 #      missing and forward-ports new Storinkator keys (e.g. text_tables)
-#   5. generates 3 PDFs per book (digital, 145x205mm Color, 145x205mm BW)
-#      with retry/skip on failure; private-book PDFs go to books/private/assets
+#   5. generates 3 PDFs per book via ./generatepdf.sh (digital,
+#      145x205mm Color, 145x205mm BW; private book → books/private/assets)
 #   6. refreshes the SELFPUBLISHING.md download links to the new files
 #   7. publishes everything via ./publish.sh
 #
@@ -297,32 +297,11 @@ done
 
 if [ "$NEED_PDF" = "1" ]; then
   info "Step 5: generating PDFs from $PROD_URL ..."
+  PDF_IDS=""
   for id in $RELEASE_IDS; do
-    [ "$(get_pdf "$id")" = "yes" ] || continue
-    if is_private "$id"; then ASSETS="$TOP/books/private/assets"; else ASSETS="$TOP/assets"; fi
-    mkdir -p "$ASSETS/pdf/digital" "$ASSETS/pdf/print-color" "$ASSETS/pdf/print-bw"
-    LOG="/tmp/publish-release-book$id.log"
-    while true; do
-      echo ""
-      echo "--- $(book_title "$id"): digital + color + BW ---"
-      # shellcheck disable=SC2086
-      if (cd "$TOP/code/scripts" && "$RT" generate-pdfs.ts --book "$id" \
-          --url "$PROD_URL" --assets "$ASSETS" 2>&1 | tee "$LOG"); then
-        note "PDFs done for $(book_title "$id")."
-        break
-      fi
-      echo ""
-      echo "Generation failed for $(book_title "$id") (log: $LOG):"
-      tail -15 "$LOG" | sed 's/^/    /'
-      printf "[r]etry / [s]kip book / [a]bort? [r]: "
-      IFS= read -r ans || true
-      [ -z "$ans" ] && ans="r"
-      case "$ans" in
-        [Ss]*) note "skipped $(book_title "$id")."; break ;;
-        [Aa]*) die "aborted by user" ;;
-      esac
-    done
+    [ "$(get_pdf "$id")" = "yes" ] && PDF_IDS="$PDF_IDS $id"
   done
+  ./generatepdf.sh --book "$PDF_IDS" --url "$PROD_URL" || die "PDF generation aborted"
 
   info "Step 6: SELFPUBLISHING.md download links..."
   for id in $RELEASE_IDS; do
