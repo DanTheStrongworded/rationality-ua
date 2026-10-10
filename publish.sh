@@ -68,7 +68,9 @@ echo "    backed up."
 
 echo ">>> Step 2 of 2: outer repo ($OUTERBRANCH)"
 cd "$TOP"
-if ! git pull -q --ff-only 2>/dev/null; then
+# Never recurse into submodules here: with submodule.recurse=true an outer
+# pull silently resets the just-published book back to the recorded commit.
+if ! git -c submodule.recurse=false pull -q --ff-only 2>/dev/null; then
   echo "    ERROR: someone else published at the same time and git cannot"
   echo "    combine it automatically. Ask Den for help - do not push by hand."
   exit 1
