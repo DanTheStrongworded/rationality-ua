@@ -1,5 +1,5 @@
 # Раціональність: від Алгоритмів до Якорування
-![Poster](./assets/Poster.png)
+![Poster](./assets/images/Poster.png)
 <p align="center">
     <a href="https://plvn.app/uk/rationality">Читати онлайн</a> | <a href="./SELFPUBLISHING.md">Замовити друковану</a> | <a href="./assets/">Завантажити у PDF</a>
 </p>
