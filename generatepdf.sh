@@ -5,6 +5,7 @@
 #   ./generatepdf.sh                  ask which book(s) to rebuild
 #   ./generatepdf.sh --book 1         rebuild one book (1, 2 or 3)
 #   ./generatepdf.sh --book "1 3"     rebuild several books
+#   ./generatepdf.sh --book 1 --browser 2   use the 2nd discovered browser
 #   ./generatepdf.sh --url <storinkator-url>   override the builder URL
 #
 # For each book it builds 3 files with stable names:
@@ -150,13 +151,15 @@ BOOKS_LIST="$("$RT" "$TOP/code/scripts/books.ts")" || die "cannot list books"
 
 URL="$PROD_URL"
 BOOK_ARG=""
+BROWSER_SEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --help|-h)
-      sed -n '2,17p' "$0"
+      sed -n '2,20p' "$0"
       exit 0
       ;;
     --book) BOOK_ARG="${2:-}"; [ -z "$BOOK_ARG" ] && die "--book needs a value"; shift 2 ;;
+    --browser) BROWSER_SEL="${2:-}"; [ -z "$BROWSER_SEL" ] && die "--browser needs a value"; shift 2 ;;
     --url) URL="${2:-}"; [ -z "$URL" ] && die "--url needs a value"; shift 2 ;;
     *) die "unknown arg: $1 (see --help)" ;;
   esac
@@ -180,6 +183,18 @@ for token in $IDS; do
   RESOLVED_IDS="$RESOLVED_IDS $rid"
 done
 IDS="$RESOLVED_IDS"
+
+# Browser choice: explicit --browser wins, otherwise offer when several exist.
+if [ -z "$BROWSER_SEL" ]; then
+  BROWSER_CHOICES="$(cd "$TOP/code/scripts" && "$RT" -e "import('./generate-pdfs.ts').then(m => { for (const b of m.discoverBrowsers()) console.log(b); })" 2>/dev/null)"
+  if [ "$(printf "%s" "$BROWSER_CHOICES" | grep -c .)" -gt 1 ]; then
+    echo "Multiple browsers found:"
+    echo "$BROWSER_CHOICES" | awk '{print "  " NR ". " $0}'
+    printf "Which browser? [1]: "
+    IFS= read -r BROWSER_SEL || true
+    [ -z "$BROWSER_SEL" ] && BROWSER_SEL=1
+  fi
+fi
 
 # warn when the builder site may be stale (never changes anything here)
 STOR_DIR="${STORINKATOR_DIR:-$TOP/../storinkator}"
@@ -239,11 +254,23 @@ for id in $IDS; do
   if is_private "$id"; then ASSETS="$TOP/books/private/assets"; else ASSETS="$TOP/assets"; fi
   mkdir -p "$ASSETS/pdf/digital" "$ASSETS/pdf/print-color" "$ASSETS/pdf/print-bw"
   LOG="/tmp/generatepdf-book$id.log"
+  # An explicit path travels via CHROME_PATH (immune to spaces in path);
+  # numbers/names go through --browser (no spaces expected).
+  GEN_BROWSER_ARG=""
+  if [ -n "$BROWSER_SEL" ]; then
+    if [ -f "$BROWSER_SEL" ]; then
+      export CHROME_PATH="$BROWSER_SEL"
+    else
+      GEN_BROWSER_ARG="--browser $BROWSER_SEL"
+    fi
+  fi
   while true; do
     echo ""
     echo "--- $(book_title "$id"): digital + color + BW ---"
+    # PIPESTATUS: `| tee` would otherwise mask generate-pdfs.ts failures.
+    # shellcheck disable=SC2086
     if (cd "$TOP/code/scripts" && "$RT" generate-pdfs.ts --book "$id" \
-        --url "$URL" --assets "$ASSETS" 2>&1 | tee "$LOG"); then
+        --url "$URL" --assets "$ASSETS" $GEN_BROWSER_ARG 2>&1 | tee "$LOG"; test "${PIPESTATUS[0]}" -eq 0); then
       note "PDFs done for $(book_title "$id")."
       break
     fi
