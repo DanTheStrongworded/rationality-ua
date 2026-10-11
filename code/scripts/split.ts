@@ -326,7 +326,7 @@ export async function splitMarkdownFile(inputFile: string, outputDir: string): P
     console.log(`Total Level 2 files: ${level2Index - 1}`);
   } catch (error) {
     console.error("Error processing file:", (error as Error).message);
-    process.exit(1);
+    throw error;
   }
 }
 
@@ -349,7 +349,8 @@ export async function main(): Promise<void> {
   if (args.length < 1) {
     console.log("Usage: node split.ts <input-markdown-file> [output-directory]");
     console.log("Example: node split.ts document.md ./output");
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const inputFile = args[0]!;
@@ -360,7 +361,8 @@ export async function main(): Promise<void> {
     await fs.access(inputFile);
   } catch {
     console.error(`Input file '${inputFile}' does not exist.`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   console.log(`Input file: ${inputFile}`);
@@ -374,5 +376,7 @@ export async function main(): Promise<void> {
 const invokedAsMain =
   process.argv[1] != null && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
-  void main();
+  main().catch(() => {
+    process.exitCode = 1;
+  });
 }

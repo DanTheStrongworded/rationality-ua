@@ -323,5 +323,5 @@ export function run(argv: string[]): number {
 const invokedAsMain =
   process.argv[1] != null && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
-  process.exit(run(process.argv.slice(2)));
+  process.exitCode = run(process.argv.slice(2));
 }

@@ -72,6 +72,9 @@ function localUrl(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
 
+/** Thrown to stop after printing --help (exit 0, no error). */
+class HelpRequested extends Error {}
+
 function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     url: process.env.STORINKATOR_URL ?? null,
@@ -143,7 +146,7 @@ function parseArgs(argv: string[]): CliOptions {
   --url <storinkator>   Force URL (skip local/prod auto-detect)
   --start               Auto-start local vite if not reachable
   (default)             Use local if up, else ${PROD_STORINKATOR_URL}`);
-      process.exit(0);
+      throw new HelpRequested();
     } else throw new Error(`Unknown arg: ${a}`);
   }
 
@@ -582,7 +585,8 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (err instanceof HelpRequested) return; // --help already printed
   console.error("");
   console.error(err instanceof Error ? err.stack || err.message : err);
-  process.exit(1);
+  process.exitCode = 1;
 });
