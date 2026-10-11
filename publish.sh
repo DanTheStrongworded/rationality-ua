@@ -210,9 +210,40 @@ fi
 # ------------------------------------------------------------- full flow --
 command -v curl >/dev/null 2>&1 || die "need curl on PATH"
 RT=""
-if command -v bun >/dev/null 2>&1; then RT="bun";
-elif command -v node >/dev/null 2>&1; then RT="node";
-else die "need bun or node on PATH"; fi
+# node_ok: node exists and runs .ts directly (v22+ type stripping)
+node_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  local ver major
+  ver="$(node --version 2>/dev/null)" || return 1
+  major="${ver#v}"
+  major="${major%%.*}"
+  case "$major" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$major" -ge 22 ]
+}
+ensure_runtime() {
+  if command -v bun >/dev/null 2>&1; then RT="bun"; return 0; fi
+  if node_ok; then RT="node"; return 0; fi
+  echo "The scripts need bun (preferred) or node 22+ — neither was found."
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      die "on Windows install bun via powershell (see https://bun.sh) or node via https://nodejs.org, then rerun"
+      ;;
+  esac
+  if ! ask_yn "Install bun automatically now?" "Y"; then
+    die "install bun (https://bun.sh) or node (https://nodejs.org), then rerun"
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    brew install bun || die "brew install bun failed"
+  else
+    command -v curl >/dev/null 2>&1 || die "need curl to install bun"
+    curl -fsSL https://bun.sh/install | bash || die "bun install failed"
+    export PATH="$HOME/.bun/bin:$PATH"
+  fi
+  command -v bun >/dev/null 2>&1 || die "bun installed but not on PATH — add ~/.bun/bin to PATH and rerun"
+  RT="bun"
+  note "bun installed."
+}
+ensure_runtime
 info "runtime: $RT ($(command -v "$RT"))"
 
 BOOKS_LIST="$("$RT" "$TOP/code/scripts/books.ts")" || die "cannot list books"

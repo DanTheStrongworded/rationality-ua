@@ -43,13 +43,75 @@ info() { echo ">>> $*"; }
 note() { echo "    $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+# ask_yn "prompt" default(Y/N) -> returns 0 for yes
+ask_yn() {
+  local prompt="$1" def="$2" hint ans
+  if [ "$def" = "Y" ]; then hint="Y/n"; else hint="y/N"; fi
+  printf "%s [%s]: " "$prompt" "$hint"
+  ans=""
+  IFS= read -r ans || true
+  if [ -z "$ans" ]; then ans="$def"; fi
+  case "$ans" in
+    [Yy]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# node_ok: node exists and runs .ts directly (v22+ type stripping)
+node_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  local ver major
+  ver="$(node --version 2>/dev/null)" || return 1
+  major="${ver#v}"
+  major="${major%%.*}"
+  case "$major" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$major" -ge 22 ]
+}
+
+# ensure_runtime: sets RT to bun or node, offering automatic bun install.
+ensure_runtime() {
+  if command -v bun >/dev/null 2>&1; then RT="bun"; return 0; fi
+  if node_ok; then RT="node"; return 0; fi
+  echo "The scripts need bun (preferred) or node 22+ — neither was found."
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      die "on Windows install bun via powershell (see https://bun.sh) or node via https://nodejs.org, then rerun"
+      ;;
+  esac
+  if ! ask_yn "Install bun automatically now?" "Y"; then
+    die "install bun (https://bun.sh) or node (https://nodejs.org), then rerun"
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    brew install bun || die "brew install bun failed"
+  else
+    command -v curl >/dev/null 2>&1 || die "need curl to install bun"
+    curl -fsSL https://bun.sh/install | bash || die "bun install failed"
+    export PATH="$HOME/.bun/bin:$PATH"
+  fi
+  command -v bun >/dev/null 2>&1 || die "bun installed but not on PATH — add ~/.bun/bin to PATH and rerun"
+  RT="bun"
+  note "bun installed."
+}
+
+# ensure_script_deps: one-time install of code/scripts dependencies.
+ensure_script_deps() {
+  [ -d "$TOP/code/scripts/node_modules/playwright-core" ] && return 0
+  echo "PDF generation needs extra packages (playwright) — not installed yet."
+  if ! ask_yn "Install them now? (one-time, inside code/scripts)" "Y"; then
+    die "cannot generate PDFs without dependencies"
+  fi
+  if [ "$RT" = "bun" ]; then
+    (cd "$TOP/code/scripts" && bun install) || die "bun install failed"
+  else
+    (cd "$TOP/code/scripts" && npm install) || die "npm install failed"
+  fi
+}
+
 TOP="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run me from inside the rationality-ua repo"
 cd "$TOP" || exit 1
 
 RT=""
-if command -v bun >/dev/null 2>&1; then RT="bun";
-elif command -v node >/dev/null 2>&1; then RT="node";
-else die "need bun or node on PATH"; fi
+ensure_runtime
 
 BOOKS_LIST="$("$RT" "$TOP/code/scripts/books.ts")" || die "cannot list books"
 [ -z "$BOOKS_LIST" ] && die "no books found (need *.storinkator.json under books/)"
@@ -107,6 +169,8 @@ cfg_value() {
   # cfg_value <config-file> <js-expr-from-cfg>  (node/bun one-liner)
   $RT -e "const fs=require('fs');const c=JSON.parse(fs.readFileSync('$1','utf8'));console.log($2);" 2>/dev/null
 }
+
+ensure_script_deps
 
 for id in $IDS; do
   dir="$(book_dir "$id")"
