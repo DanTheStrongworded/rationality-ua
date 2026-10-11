@@ -57,21 +57,43 @@ ask_yn() {
   esac
 }
 
-# node_ok: node exists and runs .ts directly (v22+ type stripping)
+# node_ok [bin]: the runtime runs .ts directly (v22+ type stripping)
 node_ok() {
-  command -v node >/dev/null 2>&1 || return 1
-  local ver major
-  ver="$(node --version 2>/dev/null)" || return 1
+  local bin="${1:-node}" ver major
+  if [ "$bin" = "node" ]; then
+    command -v node >/dev/null 2>&1 || return 1
+  else
+    [ -x "$bin" ] || return 1
+  fi
+  ver="$("$bin" --version 2>/dev/null)" || return 1
   major="${ver#v}"
   major="${major%%.*}"
   case "$major" in ''|*[!0-9]*) return 1 ;; esac
   [ "$major" -ge 22 ]
 }
-
+# win_find <exe>: ask Windows itself where a native binary lives — Git Bash
+# PATH often misses native installs (e.g. node.exe). Prints an msys-style
+# path, or nothing.
+win_find() {
+  command -v cmd >/dev/null 2>&1 || return 1
+  local found
+  found="$(cmd //c "where $1" 2>/dev/null | tr -d '\r' | head -1)"
+  [ -n "$found" ] || return 1
+  if command -v cygpath >/dev/null 2>&1; then cygpath -u "$found"; else printf "%s" "$found"; fi
+}
 # ensure_runtime: sets RT to bun or node, offering automatic bun install.
 ensure_runtime() {
+  local cand
   if command -v bun >/dev/null 2>&1; then RT="bun"; return 0; fi
-  if node_ok; then RT="node"; return 0; fi
+  if node_ok node; then RT="node"; return 0; fi
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      cand="$(win_find bun)"
+      if [ -n "$cand" ]; then RT="$cand"; return 0; fi
+      cand="$(win_find node)"
+      if [ -n "$cand" ] && node_ok "$cand"; then RT="$cand"; return 0; fi
+      ;;
+  esac
   echo "The scripts need bun (preferred) or node 22+ — neither was found."
   case "$(uname -s 2>/dev/null)" in
     MINGW*|MSYS*|CYGWIN*)
@@ -95,16 +117,26 @@ ensure_runtime() {
 
 # ensure_script_deps: one-time install of code/scripts dependencies.
 ensure_script_deps() {
+  local NPM c
   [ -d "$TOP/code/scripts/node_modules/playwright-core" ] && return 0
   echo "PDF generation needs extra packages (playwright) — not installed yet."
   if ! ask_yn "Install them now? (one-time, inside code/scripts)" "Y"; then
     die "cannot generate PDFs without dependencies"
   fi
-  if [ "$RT" = "bun" ]; then
-    (cd "$TOP/code/scripts" && bun install) || die "bun install failed"
-  else
-    (cd "$TOP/code/scripts" && npm install) || die "npm install failed"
-  fi
+  case "$(basename "$RT")" in
+    bun|bun.exe) (cd "$TOP/code/scripts" && "$RT" install) || die "package install failed" ;;
+    *)
+      NPM="npm"
+      if ! command -v npm >/dev/null 2>&1; then
+        NPM=""
+        for c in "$(dirname "$RT")/npm" "$(dirname "$RT")/npm.cmd"; do
+          if [ -x "$c" ]; then NPM="$c"; break; fi
+        done
+        [ -n "$NPM" ] || die "npm not found next to $RT — install npm, then rerun"
+      fi
+      (cd "$TOP/code/scripts" && "$NPM" install) || die "npm install failed"
+      ;;
+  esac
 }
 
 TOP="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run me from inside the rationality-ua repo"

@@ -210,19 +210,42 @@ fi
 # ------------------------------------------------------------- full flow --
 command -v curl >/dev/null 2>&1 || die "need curl on PATH"
 RT=""
-# node_ok: node exists and runs .ts directly (v22+ type stripping)
+# node_ok [bin]: the runtime runs .ts directly (v22+ type stripping)
 node_ok() {
-  command -v node >/dev/null 2>&1 || return 1
-  local ver major
-  ver="$(node --version 2>/dev/null)" || return 1
+  local bin="${1:-node}" ver major
+  if [ "$bin" = "node" ]; then
+    command -v node >/dev/null 2>&1 || return 1
+  else
+    [ -x "$bin" ] || return 1
+  fi
+  ver="$("$bin" --version 2>/dev/null)" || return 1
   major="${ver#v}"
   major="${major%%.*}"
   case "$major" in ''|*[!0-9]*) return 1 ;; esac
   [ "$major" -ge 22 ]
 }
+# win_find <exe>: ask Windows itself where a native binary lives — Git Bash
+# PATH often misses native installs (e.g. node.exe). Prints an msys-style
+# path, or nothing.
+win_find() {
+  command -v cmd >/dev/null 2>&1 || return 1
+  local found
+  found="$(cmd //c "where $1" 2>/dev/null | tr -d '\r' | head -1)"
+  [ -n "$found" ] || return 1
+  if command -v cygpath >/dev/null 2>&1; then cygpath -u "$found"; else printf "%s" "$found"; fi
+}
 ensure_runtime() {
+  local cand
   if command -v bun >/dev/null 2>&1; then RT="bun"; return 0; fi
-  if node_ok; then RT="node"; return 0; fi
+  if node_ok node; then RT="node"; return 0; fi
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      cand="$(win_find bun)"
+      if [ -n "$cand" ]; then RT="$cand"; return 0; fi
+      cand="$(win_find node)"
+      if [ -n "$cand" ] && node_ok "$cand"; then RT="$cand"; return 0; fi
+      ;;
+  esac
   echo "The scripts need bun (preferred) or node 22+ — neither was found."
   case "$(uname -s 2>/dev/null)" in
     MINGW*|MSYS*|CYGWIN*)
