@@ -276,7 +276,8 @@ function parseArgs(argv: string[]): {
                         --ignore-arg disable-component-update (repeatable).
                         Tests whether a default flag breaks hyphenation.
   --port <n>          Local vite port to try first (default ${DEFAULT_LOCAL_PORT})
-  --out <dir>         Screenshot directory (default: tmpdir/storinkator-debug)`);
+  --out <dir>         Screenshot directory (default: tmpdir/storinkator-debug)
+  --no-wait           Close the window and exit after the tasks (for scripting)`);
       process.exitCode = 0;
       throw new HelpDone();
     } else throw new Error(`Unknown arg: ${a}`);
@@ -362,6 +363,7 @@ async function main() {
       console.log(`  browser ${i + 1}: ${p}${p === browserPath ? "  ← using" : ""}`);
     }
     console.log(`  launch args: ${JSON.stringify(CHROMIUM_LAUNCH_ARGS)}`);
+    console.log(`  ignoreDefaultArgs: ${o.ignoreArgs.length ? JSON.stringify(o.ignoreArgs) : "(none)"}`);
     console.log(`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}`);
     console.log(`  locale: ${o.locale ?? "(none — like the generator)"}`);
     console.log(`  url: ${storinkatorUrl}`);
@@ -370,6 +372,18 @@ async function main() {
       executablePath: browserPath,
       headless: false,
       args: CHROMIUM_LAUNCH_ARGS,
+      // Playwright disables the component updater by default
+      // (--disable-component-update), which is exactly how Chrome on
+      // Windows/Linux downloads hyphen-data (microsoft/playwright#34375).
+      // macOS is unaffected (system hyphen APIs). Accept both "flag" and
+      // "--flag" spellings since matching is by string equality.
+      ...(o.ignoreArgs.length
+        ? {
+            ignoreDefaultArgs: o.ignoreArgs.flatMap((f) =>
+              f.startsWith("--") ? [f, f.slice(2)] : [f, `--${f}`],
+            ),
+          }
+        : {}),
     });
     console.log(`  browser version: ${await browser.version()}`);
     const page = await browser.newPage({
