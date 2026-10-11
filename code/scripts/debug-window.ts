@@ -204,6 +204,7 @@ function parseArgs(argv: string[]): {
   browser: string | null;
   userDataDir: string | null;
   ignoreArgs: string[];
+  settle: number;
 } {
   const o = {
     locale: undefined as string | undefined,
@@ -216,6 +217,7 @@ function parseArgs(argv: string[]): {
     browser: null as string | null,
     userDataDir: null as string | null,
     ignoreArgs: [] as string[],
+    settle: 0,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -259,6 +261,10 @@ function parseArgs(argv: string[]): {
       const f = argv[++i];
       if (!f) throw new Error("Missing value for --ignore-arg");
       o.ignoreArgs.push(f);
+    } else if (a === "--settle") {
+      const s = Number(argv[++i]);
+      if (!Number.isFinite(s) || s < 0 || s > 600) throw new Error(`Invalid --settle: ${argv[i]}`);
+      o.settle = s;
     }
     else if (a === "--help" || a === "-h") {
       console.log(`Usage: bun run debug-window.ts [options]
@@ -274,6 +280,9 @@ function parseArgs(argv: string[]): {
                         but not in a fresh profile, the profile state matters.
   --ignore-arg <flag>   Drop a Playwright default launch flag, e.g.
                         --ignore-arg disable-component-update (repeatable).
+  --settle <seconds>    Wait after launch before measuring (default 0).
+                        Gives a re-enabled component updater time to
+                        download hyphen-data into the fresh profile.
                         Tests whether a default flag breaks hyphenation.
   --port <n>          Local vite port to try first (default ${DEFAULT_LOCAL_PORT})
   --out <dir>         Screenshot directory (default: tmpdir/storinkator-debug)
@@ -386,6 +395,10 @@ async function main() {
         : {}),
     });
     console.log(`  browser version: ${await browser.version()}`);
+    if (o.settle > 0) {
+      console.log(`  settling ${o.settle}s for component-updater downloads…`);
+      await new Promise((r) => setTimeout(r, o.settle * 1000));
+    }
     const page = await browser.newPage({
       viewport: VIEWPORT,
       ...(o.locale ? { locale: o.locale } : {}),
