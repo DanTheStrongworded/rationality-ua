@@ -1,29 +1,23 @@
 /**
- * Debug Ukrainian hyphenation (or any rendering diff) between a manually
- * opened Chrome and the Playwright-driven one used for PDF export.
- *
- * Uses the exact same browser resolution, executable, launch flags, viewport
- * and URL resolution as generate-pdfs.ts — only headless/headful differs.
+ * Debug window for the PDF pipeline: opens the same Chrome for Testing build
+ * the generator uses (headful here) and renders a synthetic Ukrainian
+ * hyphenation fixture plus, optionally, a real book.
  *
  * What it does:
- *   1. Opens a visible Chromium window and prints the full settings audit
- *      trail (so you can confirm it matches the generator).
+ *   1. Ensures Chrome for Testing (auto-downloaded, see chrome-for-testing.ts)
+ *      and prints the full settings audit trail.
  *   2. Renders a synthetic Ukrainian hyphenation fixture (lang="uk" +
- *      hyphens:auto vs manual/no-lang controls), measures line counts and
+ *      hyphens:auto vs manual/no-lang controls), measures split words and
  *      overflow per block, and saves a screenshot for eyeballing.
  *   3. Optionally (--book) loads a real book into Storinkator first, with
  *      optional --paginate.
- *   4. Waits for Enter so you can compare side by side with
- *      your manual Chrome window.
+ *   4. Waits for Enter so you can inspect the window.
  *
  * Usage (from code/scripts):
  *   bun run debug-window.ts
- *   bun run debug-window.ts --browser 2
- *   bun run debug-window.ts --locale uk-UA          # test a locale hypothesis
  *   bun run debug-window.ts --book 1                # also load book 1 (digital)
  *   bun run debug-window.ts --book 1 --variant print --paginate
  *   bun run debug-window.ts --url https://storinkator.vercel.app --out /tmp/shots
- *   bun run debug-window.ts --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
  */
 
 import { mkdirSync } from "node:fs";
@@ -36,15 +30,13 @@ import {
   CHROMIUM_LAUNCH_ARGS,
   DEFAULT_LOCAL_PORT,
   collectBookFiles,
-  discoverBrowsers,
   dismissOverlays,
   ensureStorinkator,
-  findBrowserExecutable,
   loadBookIntoStorinkator,
   paginate,
-  selectBrowser,
   type CliOptions,
 } from "./generate-pdfs.ts";
+import { ensureChromeForTesting } from "./chrome-for-testing.ts";
 import { discoverBooks } from "./books.ts";
 
 type Variant = "digital" | "color" | "bw";
@@ -194,35 +186,24 @@ function extraVerdicts(r: FixtureReport): string[] {
 }
 
 function parseArgs(argv: string[]): {
-  locale?: string;
   bookId?: number;
   variant: Variant;
   paginate: boolean;
   url: string | null;
   port: number;
   outDir: string;
-  browser: string | null;
-  userDataDir: string | null;
-  ignoreArgs: string[];
-  settle: number;
 } {
   const o = {
-    locale: undefined as string | undefined,
     bookId: undefined as number | undefined,
     variant: "digital" as Variant,
     paginate: false,
     url: (process.env.STORINKATOR_URL ?? null) as string | null,
     port: DEFAULT_LOCAL_PORT,
     outDir: join(tmpdir(), "storinkator-debug"),
-    browser: null as string | null,
-    userDataDir: null as string | null,
-    ignoreArgs: [] as string[],
-    settle: 0,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--locale") o.locale = argv[++i];
-    else if (a === "--book") {
+    if (a === "--book") {
       const n = Number(argv[++i]);
       if (!discoverBooks().some((b) => b.id === n)) throw new Error(`Unknown book id: ${argv[i]}`);
       o.bookId = n;
@@ -239,51 +220,12 @@ function parseArgs(argv: string[]): {
       if (!Number.isInteger(p) || p < 1 || p > 65535) throw new Error(`Invalid --port: ${p}`);
       o.port = p;
     } else if (a === "--out") o.outDir = argv[++i] ?? o.outDir;
-    else if (a === "--browser") {
-      const sel = argv[++i];
-      if (sel === undefined) throw new Error("Missing value for --browser");
-      if (sel === "list") {
-        const all = discoverBrowsers();
-        console.log(
-          all.length
-            ? "Discovered browsers:\n" + all.map((p, i) => `  ${i + 1}. ${p}`).join("\n")
-            : "No browsers discovered.",
-        );
-        process.exitCode = 0;
-        throw new HelpDone();
-      }
-      o.browser = sel;
-    } else if (a === "--user-data-dir") {
-      const d = argv[++i];
-      if (!d) throw new Error("Missing value for --user-data-dir");
-      o.userDataDir = d;
-    } else if (a === "--ignore-arg") {
-      const f = argv[++i];
-      if (!f) throw new Error("Missing value for --ignore-arg");
-      o.ignoreArgs.push(f);
-    } else if (a === "--settle") {
-      const s = Number(argv[++i]);
-      if (!Number.isFinite(s) || s < 0 || s > 600) throw new Error(`Invalid --settle: ${argv[i]}`);
-      o.settle = s;
-    }
     else if (a === "--help" || a === "-h") {
       console.log(`Usage: bun run debug-window.ts [options]
-  --locale <locale>   Pass locale to newPage (default: none, like the generator)
   --book <id>         Also load a real book into Storinkator first
   --variant <v>       Book variant to load (default digital)
   --paginate          Paginate after loading the book (slow)
   --url <storinkator> Force URL (skip local/prod auto-detect)
-  --browser <n|name|path> Pick a Chromium (default: auto-detect first found)
-  --user-data-dir <dir> Use a REAL browser profile instead of a fresh one
-                        (close that browser first — profile gets locked).
-                        Decides profile-vs-flags: if hyphenation works here
-                        but not in a fresh profile, the profile state matters.
-  --ignore-arg <flag>   Drop a Playwright default launch flag, e.g.
-                        --ignore-arg disable-component-update (repeatable).
-  --settle <seconds>    Wait after launch before measuring (default 0).
-                        Gives a re-enabled component updater time to
-                        download hyphen-data into the fresh profile.
-                        Tests whether a default flag breaks hyphenation.
   --port <n>          Local vite port to try first (default ${DEFAULT_LOCAL_PORT})
   --out <dir>         Screenshot directory (default: tmpdir/storinkator-debug)
   --no-wait           Close the window and exit after the tasks (for scripting)`);
@@ -351,13 +293,13 @@ async function main() {
     return;
   }
 
-  const browserPath = o.browser ? selectBrowser(o.browser) : findBrowserExecutable();
+  const { executablePath: browserPath, version: browserVersion } =
+    await ensureChromeForTesting((m) => console.log(`  ${m}`));
   const genOpts: CliOptions = {
     url: o.url,
     port: o.port,
     books: [],
     variants: [],
-    browser: o.browser,
     startStorinkator: false,
   };
   const { url: storinkatorUrl } = await ensureStorinkator(genOpts);
@@ -367,42 +309,18 @@ async function main() {
   try {
     const { chromium } = await import("playwright-core");
     console.log("");
-    console.log("  executable: " + browserPath + (o.browser ? ` (chosen via --browser "${o.browser}")` : " (auto-detected)"));
-    for (const [i, p] of discoverBrowsers().entries()) {
-      console.log(`  browser ${i + 1}: ${p}${p === browserPath ? "  ← using" : ""}`);
-    }
+    console.log(`  executable: ${browserPath} (Chrome for Testing ${browserVersion})`);
     console.log(`  launch args: ${JSON.stringify(CHROMIUM_LAUNCH_ARGS)}`);
-    console.log(`  ignoreDefaultArgs: ${o.ignoreArgs.length ? JSON.stringify(o.ignoreArgs) : "(none)"}`);
     console.log(`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}`);
-    console.log(`  locale: ${o.locale ?? "(none — like the generator)"}`);
     console.log(`  url: ${storinkatorUrl}`);
 
     browser = await chromium.launch({
       executablePath: browserPath,
       headless: false,
       args: CHROMIUM_LAUNCH_ARGS,
-      // Playwright disables the component updater by default
-      // (--disable-component-update), which is exactly how Chrome on
-      // Windows/Linux downloads hyphen-data (microsoft/playwright#34375).
-      // macOS is unaffected (system hyphen APIs). Accept both "flag" and
-      // "--flag" spellings since matching is by string equality.
-      ...(o.ignoreArgs.length
-        ? {
-            ignoreDefaultArgs: o.ignoreArgs.flatMap((f) =>
-              f.startsWith("--") ? [f, f.slice(2)] : [f, `--${f}`],
-            ),
-          }
-        : {}),
     });
     console.log(`  browser version: ${await browser.version()}`);
-    if (o.settle > 0) {
-      console.log(`  settling ${o.settle}s for component-updater downloads…`);
-      await new Promise((r) => setTimeout(r, o.settle * 1000));
-    }
-    const page = await browser.newPage({
-      viewport: VIEWPORT,
-      ...(o.locale ? { locale: o.locale } : {}),
-    });
+    const page = await browser.newPage({ viewport: VIEWPORT });
     const report = await runFixture(page, o.outDir, "window");
     printReport("window", report);
 
