@@ -36,17 +36,22 @@ const REPO_ROOT = resolve(__dirname, "../..");
 let OUT_DIGITAL = join(REPO_ROOT, "assets/pdf/digital");
 let OUT_PRINT_COLOR = join(REPO_ROOT, "assets/pdf/print-color");
 let OUT_PRINT_BW = join(REPO_ROOT, "assets/pdf/print-bw");
-const PROD_STORINKATOR_URL = "https://storinkator.vercel.app";
-const DEFAULT_LOCAL_PORT = 5173;
+export const PROD_STORINKATOR_URL = "https://storinkator.vercel.app";
+export const DEFAULT_LOCAL_PORT = 5173;
+
+/** CLI launch flags shared by the generator and debug tooling. Keep in sync. */
+export const CHROMIUM_LAUNCH_ARGS = ["--font-render-hinting=none", "--disable-lcd-text"];
 
 type Variant = "digital" | "color" | "bw";
 
-type CliOptions = {
+export type CliOptions = {
   /** Explicit --url, or null to auto-detect local → prod */
   url: string | null;
   port: number;
   books: BookSpec[];
   variants: Variant[];
+  /** --browser selector (n|name|path), or null for auto-detect */
+  browser: string | null;
   /** Auto-start local vite only when explicitly requested */
   startStorinkator: boolean;
 };
@@ -68,7 +73,7 @@ function logWarn(msg: string) {
   log(`! ${msg}`);
 }
 
-function localUrl(port: number): string {
+export function localUrl(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
 
@@ -81,6 +86,7 @@ function parseArgs(argv: string[]): CliOptions {
     port: DEFAULT_LOCAL_PORT,
     books: discoverBooks(),
     variants: ["digital", "color", "bw"],
+    browser: null,
     startStorinkator: false,
   };
 
@@ -109,6 +115,19 @@ function parseArgs(argv: string[]): CliOptions {
         if (!match) throw new Error(`Unknown book id: ${id}`);
         opts.books = [match];
       }
+    } else if (a === "--browser") {
+      const sel = argv[++i];
+      if (sel === undefined) throw new Error("Missing value for --browser");
+      if (sel === "list") {
+        const all = discoverBrowsers();
+        console.log(
+          all.length
+            ? "Discovered browsers:\n" + all.map((p, i) => `  ${i + 1}. ${p}`).join("\n")
+            : "No browsers discovered.",
+        );
+        throw new HelpRequested();
+      }
+      opts.browser = sel;
     } else if (a === "--variants") {
       const list = (argv[++i] ?? "").split(",").map((s) => s.trim().toLowerCase());
       const mapped = list.map((v) => (v === "print" ? "color" : v));
@@ -136,6 +155,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (a === "--help" || a === "-h") {
       console.log(`Usage: bun run generate-pdfs.ts [options]
   --book <1|2|3|all>   Which book(s) (default: all)
+  --browser <n|name|path|list>  Pick a Chromium (default: auto-detect first found)
   --variants <list>     Comma list of digital,color,bw (default: all three;
                         \"print\" accepted as alias of color)
   --digital/--print/--color/--bw   Only that variant (legacy --print = color)
@@ -185,26 +205,58 @@ function configFileFor(variant: Variant): string {
   return "print.storinkator.json";
 }
 
-function findBrowserExecutable(): string {
-  if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
-    return process.env.CHROME_PATH;
+export function discoverBrowsers(): string[] {
+  const found: string[] = [];
+  const push = (p: string | undefined) => {
+    if (p && existsSync(p) && !found.includes(p)) found.push(p);
+  };
+  push(process.env.CHROME_PATH);
+  for (const p of BROWSER_CANDIDATES) push(p);
+  for (const p of windowsBrowserCandidates()) push(p);
+  return found;
+}
+
+const BROWSER_CANDIDATES = [
+  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "/Applications/Arc.app/Contents/MacOS/Arc",
+  "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+  `${process.env.HOME}/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`,
+  `${process.env.HOME}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+];
+
+export function findBrowserExecutable(): string {
+  const all = discoverBrowsers();
+  if (!all.length) {
+    throw new Error(
+      "No Chromium browser found. Install Brave/Chrome/Edge or set CHROME_PATH.",
+    );
   }
-  const candidates = [
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Arc.app/Contents/MacOS/Arc",
-    "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
-    `${process.env.HOME}/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`,
-    `${process.env.HOME}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
-    ...windowsBrowserCandidates(),
-  ];
-  for (const p of candidates) {
-    if (p && existsSync(p)) return p;
+  return all[0]!;
+}
+
+/** Resolve --browser <n|name|path>: number picks from discovery order. */
+export function selectBrowser(selector: string): string {
+  const all = discoverBrowsers();
+  const list = () => (all.length ? all.map((p, i) => `  ${i + 1}. ${p}`).join("\n") : "  (none found)");
+  if (existsSync(selector)) return selector;
+  const n = Number(selector);
+  if (Number.isInteger(n) && n >= 1 && n <= all.length) return all[n - 1]!;
+  const lower = selector.toLowerCase();
+  const matches = all.filter((p) => p.toLowerCase().includes(lower));
+  if (matches.length === 1) return matches[0]!;
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous --browser "${selector}", matches:\n` +
+        matches.map((p) => `  - ${p}`).join("\n") +
+        `\nPick one with --browser <number>:\n${list()}`,
+    );
   }
   throw new Error(
-    "No Chromium browser found. Install Brave/Chrome/Edge or set CHROME_PATH.",
+    `Unknown --browser "${selector}". Discovered browsers:\n${list()}\n` +
+      `(Or pass an executable path, or set CHROME_PATH.)`,
   );
 }
 
@@ -242,7 +294,7 @@ async function urlReachable(url: string): Promise<boolean> {
   }
 }
 
-async function ensureStorinkator(
+export async function ensureStorinkator(
   opts: CliOptions,
 ): Promise<{ url: string; proc: ChildProcess | null }> {
   if (opts.url) {
@@ -307,7 +359,7 @@ async function ensureStorinkator(
   return { url: PROD_STORINKATOR_URL, proc: null };
 }
 
-type InjectFile = {
+export type InjectFile = {
   /** webkitRelativePath, e.g. "1. Book/chapter/file.md" */
   relativePath: string;
   /** utf-8 text or base64 for binary */
@@ -315,7 +367,7 @@ type InjectFile = {
   data: string;
 };
 
-async function collectBookFiles(book: BookSpec, variant: Variant): Promise<InjectFile[]> {
+export async function collectBookFiles(book: BookSpec, variant: Variant): Promise<InjectFile[]> {
   const root = bookAbsDir(book);
   const bookFolderName = basename(root);
   const configName = configFileFor(variant);
@@ -379,7 +431,7 @@ async function collectBookFiles(book: BookSpec, variant: Variant): Promise<Injec
   return out;
 }
 
-async function dismissOverlays(page: Page) {
+export async function dismissOverlays(page: Page) {
   // Chromium hint
   const dismiss = page.getByRole("button", { name: /continue|dismiss|ok|got it/i });
   if (await dismiss.count()) {
@@ -400,7 +452,7 @@ async function dismissOverlays(page: Page) {
   }
 }
 
-async function loadBookIntoStorinkator(page: Page, files: InjectFile[], bookLabel: string) {
+export async function loadBookIntoStorinkator(page: Page, files: InjectFile[], bookLabel: string) {
   logStep("Injecting book files", `${files.length} files → ${bookLabel}`);
 
   await page.evaluate(async (payload) => {
@@ -454,7 +506,7 @@ async function loadBookIntoStorinkator(page: Page, files: InjectFile[], bookLabe
   logOk(`Book loaded: ${bookLabel}`);
 }
 
-async function paginate(page: Page) {
+export async function paginate(page: Page) {
   logStep("Paginating (paged.js)");
   const btn = page.getByRole("button", { name: /Paginate all|Paginate selected/i });
   await btn.click();
@@ -541,7 +593,7 @@ async function main() {
     `  target:   ${opts.url ?? `local :${opts.port} → fallback ${PROD_STORINKATOR_URL}`}`,
   );
 
-  const browserPath = findBrowserExecutable();
+  const browserPath = opts.browser ? selectBrowser(opts.browser) : findBrowserExecutable();
   logOk(`Browser: ${browserPath}`);
 
   let storinkatorProc: ChildProcess | null = null;
@@ -555,7 +607,7 @@ async function main() {
     const browser: Browser = await chromium.launch({
       executablePath: browserPath,
       headless: true,
-      args: ["--font-render-hinting=none", "--disable-lcd-text"],
+      args: CHROMIUM_LAUNCH_ARGS,
     });
 
     try {
@@ -584,9 +636,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  if (err instanceof HelpRequested) return; // --help already printed
-  console.error("");
-  console.error(err instanceof Error ? err.stack || err.message : err);
-  process.exitCode = 1;
-});
+const invokedAsMain =
+  process.argv[1] != null && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedAsMain) {
+  main().catch((err) => {
+    if (err instanceof HelpRequested) return; // --help already printed
+    console.error("");
+    console.error(err instanceof Error ? err.stack || err.message : err);
+    process.exitCode = 1;
+  });
+}

@@ -9,6 +9,7 @@
   "scripts": {
     "generate-simplified-covers": "bun run generate-simplified-covers.ts",
     "generate-pdfs": "bun run generate-pdfs.ts",
+    "debug-window": "bun run debug-window.ts",
     "release-configs": "bun run release-configs.ts"
   }
 }
